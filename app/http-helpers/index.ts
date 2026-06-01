@@ -2,16 +2,12 @@ import axios, { AxiosError } from 'axios';
 
 //const navigation = useNavigation();
 let request = axios.create({
-  baseURL: 'https://betadev.kashremit.com/CashUIMR.svc/',
+  baseURL: 'http://localhost:8089/https://betadev.kashremit.com/CashUIMR.svc/',
 
   //  baseURL: 'https://service.kashremit.com/CashUIMR.svc/',
   timeout: 40000,
   withCredentials: false,
   headers: {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET,PUT,POST,DELETE,PATCH,OPTIONS',
-    'origin': '*',
-    'referer': '*',
     'Content-Type': 'application/json',
   }
 });

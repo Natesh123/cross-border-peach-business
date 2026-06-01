@@ -38,10 +38,7 @@ const axiosInstance = axios.create({
     timeout: 40000,
     withCredentials: false,
     headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET,PUT,POST,DELETE,PATCH,OPTIONS',
-        'origin': '*',
-        'referer': '*'
+        'Content-Type': 'application/json'
     }
 });
 

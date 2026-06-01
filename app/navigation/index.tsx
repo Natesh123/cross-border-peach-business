@@ -59,7 +59,7 @@ import QuickAddWatchlist from "app/screens/quickAddWashlist/quickAddWatchlist";
 import QuickAddWatchlistForm from "app/screens/quickAddWashlist/quickAddWatchlistForm";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import Faq from "app/screens/faq/Faq";
-
+import ChatSupport from "app/screens/chatSupport/ChatSupport";
 
 export default function Navigation({
 
@@ -303,6 +303,15 @@ const RootNavigator = () => {
         }}
       />
 
+      <Stack.Screen name="ChatSupport"
+        component={ChatSupport}
+        options={{
+          animation: 'slide_from_right',
+          title: 'Chat Support',
+          headerShown: false,
+        }}
+      />
+
 
     </Stack.Navigator>
   );
@@ -438,6 +447,19 @@ const DrawerNavigator = () => {
           headerShown: false,
           drawerIcon: ({ color, size }) => (
             <Ionicons name="help-circle-outline" size={size} color={color} />
+          ),
+        }}
+      />
+
+      {/* Help & Support */}
+      <Drawer.Screen
+        name="HelpAndSupportDrawer"
+        component={ChatSupport}
+        options={{
+          title: "Help & Support",
+          headerShown: false,
+          drawerIcon: ({ color, size }) => (
+            <Ionicons name="headset" size={size} color={color} />
           ),
         }}
       />
