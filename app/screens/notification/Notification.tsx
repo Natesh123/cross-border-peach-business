@@ -16,9 +16,10 @@ import { useIsFocused, useNavigation } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LinearGradient } from "expo-linear-gradient";
 import Animated, { FadeInDown, FadeInUp, Layout, FadeInRight } from "react-native-reanimated";
+import CountryFlag from "react-native-country-flag";
 
 import { ProfileState } from "../../atoms";
-import { GetNotificationListInfo, UpdateNotification } from "app/http-services";
+import { GetNotificationListInfo, UpdateNotification, GetTransactionDetails } from "app/http-services";
 import { FONTS, SIZES, SHADOWS } from "app/constants/Assets";
 import { RFValue } from "react-native-responsive-fontsize";
 import Vector from "app/assets/vectors";
@@ -40,8 +41,24 @@ const Notification = () => {
   const fetchNotifications = async () => {
     try {
       setLoading(true);
-      const response = await GetNotificationListInfo({});
-      const data = response?.data?.Notifications || [];
+
+      const transPayload = {
+        fromDate: '',
+        numberTranList: '50',
+        toDate: '',
+        tranList: 'COUNT',
+        transId: '',
+        transactionType: 'MONEY_REMITTANCE',
+        walletMode: 'Sendmoney'
+      };
+
+      const [notifResponse, transResponse] = await Promise.all([
+        GetNotificationListInfo({}),
+        GetTransactionDetails(transPayload)
+      ]);
+
+      const data = notifResponse?.data?.Notifications || [];
+      const transData = transResponse?.data?.TransDetails || [];
 
       const notificationTypes: Record<number, string> = {
         1: "Registration",
@@ -58,9 +75,17 @@ const Notification = () => {
         }
       });
 
+      let transIndex = 0;
       const mappedNotifications = data.map((item: any) => {
         const storageKey = `notification_${item.NotificationLogId}`;
         const localItem = localStatus[storageKey];
+        
+        let transactionDetails = null;
+        if (item.NotificationMasterId === 4 && transIndex < transData.length) {
+          transactionDetails = transData[transIndex];
+          transIndex++;
+        }
+
         return {
           id: item.NotificationLogId,
           masterId: item.NotificationMasterId,
@@ -71,6 +96,7 @@ const Notification = () => {
             localItem?.unread !== undefined
               ? localItem.unread
               : item.NotificationIsread === "False",
+          transactionDetails
         };
       });
 
@@ -109,83 +135,142 @@ const Notification = () => {
   const getNotificationStyles = (type: string) => {
     switch (type) {
       case "Transaction":
-        return { icon: "repeat", color: "#FF8E72", as: "ionicons" }; // Peach
+        return { icon: "repeat", color: "#FF8E72", as: "ionicons" };
       case "Wallet Update":
-        return { icon: "account-balance-wallet", color: "#FBBF24", as: "materialicons" }; // Gold
+        return { icon: "account-balance-wallet", color: "#FBBF24", as: "materialicons" };
       case "Registration":
-        return { icon: "person-add", color: "#10B981", as: "materialicons" }; // Mint
+        return { icon: "person-add", color: "#10B981", as: "materialicons" };
       default:
         return { icon: "notifications", color: "#FF8E72", as: "ionicons" };
     }
   };
 
-  const renderItem = (item: any, index: number, isLast: boolean) => {
+  const renderItem = (item: any, index: number) => {
     const { icon, color, as } = getNotificationStyles(item.type);
     const dateParts = item.time.split(" ");
     const dateStr = dateParts[0];
     const timeStr = dateParts.slice(1).join(" ");
+    
+    // Using require inside the component block similar to TransactionItem
+    const getCountryISO2 = require("country-iso-3-to-2");
 
+    if (item.type === "Transaction" && item.transactionDetails) {
+      const trans = item.transactionDetails;
+      const senderIso = getCountryISO2(trans.SourceCountry) || "GB";
+      const receiverIso = getCountryISO2(trans.DestinationCountry) || "";
+      const isSuccess = trans.TranStatus === "Success";
+      const statusColor = isSuccess ? "#10B981" : trans.TranStatus === "Processing" ? "#F59E0B" : "#EF4444";
+      const statusLabel = isSuccess ? "SUCCESS" : trans.TranStatus === "Processing" ? "PENDING" : "FAILED";
+
+      const senderName = `${trans.SenderFirstName || ''} ${trans.SenderLastName || ''}`.trim() || "Sender";
+      const receiverName = `${trans.ReceiverFirstName || ''} ${trans.ReceiverLastName || ''}`.trim() || trans.TransactionPurpose || "Receiver";
+
+      return (
+        <Animated.View
+          key={item.id}
+          entering={FadeInRight.delay(index * 50).duration(400)}
+          layout={Layout.springify()}
+          style={styles.cardRow}
+        >
+          <TouchableOpacity
+            onPress={() => handleNotificationPress(item)}
+            activeOpacity={0.9}
+            style={[styles.receiptCard, item.unread ? styles.receiptCardUnread : null]}
+          >
+            {/* Status Header */}
+            <View style={[styles.statusHeader, { backgroundColor: `${statusColor}10` }]}>
+              <Vector as="ionicons" name={isSuccess ? "checkmark-circle" : "time"} size={14} color={statusColor} />
+              <Text style={[styles.statusHeaderText, { color: statusColor }]}>{statusLabel}</Text>
+            </View>
+
+            {/* Sender & Receiver Info */}
+            <View style={styles.participantRow}>
+              <View style={styles.participant}>
+                <Text style={styles.participantLabel}>Sender: </Text>
+                <Text style={styles.participantName}>{senderName}</Text>
+                <Text style={styles.countryCode}> ({trans.SourceCountry || "GBR"})</Text>
+                {senderIso ? <CountryFlag isoCode={senderIso} size={14} style={styles.flagStyle} /> : null}
+              </View>
+
+              <Vector as="feather" name="arrow-right" size={16} color="#10B981" />
+
+              <View style={styles.participant}>
+                <Text style={styles.participantLabel}>Receiver: </Text>
+                <Text style={styles.participantName}>{receiverName}</Text>
+                <Text style={styles.countryCode}> ({trans.DestinationCountry || "IND"})</Text>
+                {receiverIso ? <CountryFlag isoCode={receiverIso} size={14} style={styles.flagStyle} /> : null}
+              </View>
+            </View>
+
+            {/* Amount & Mode */}
+            <View style={styles.detailsBox}>
+              <View style={styles.detailItem}>
+                <Text style={styles.detailLabel}>Amount Sent:</Text>
+                <Text style={styles.detailValue}>{trans.Currency || "£"}{trans.Amount}</Text>
+              </View>
+              <View style={styles.detailItemEnd}>
+                <Text style={styles.detailLabel}>Receiving Mode:</Text>
+                <Text style={styles.detailValueMode}>{trans.TransactionMode || "DEBIT"}</Text>
+              </View>
+            </View>
+
+            {/* Dashed Separator */}
+            <View style={styles.dashedContainer}>
+              <View style={styles.dashedLine} />
+            </View>
+
+            {/* Footer */}
+            <View style={styles.receiptFooter}>
+              <View style={styles.footerLeft}>
+                <Vector as="feather" name="send" size={12} color="#64748B" style={{ marginRight: 6 }} />
+                <Text style={styles.footerModeText}>
+                  {(trans.TransactionMode || "MOBILE WALLET").toUpperCase()}
+                </Text>
+              </View>
+
+              <View style={styles.footerCenter}>
+                <Text style={styles.footerDate}>{dateStr} • {timeStr}</Text>
+              </View>
+
+              <View style={styles.footerRight}>
+                <Text style={styles.transIdText}>{trans.TransactionID || trans.TransID || "N/A"}</Text>
+              </View>
+            </View>
+            
+            {item.unread && (
+               <View style={styles.unreadDot} />
+            )}
+          </TouchableOpacity>
+        </Animated.View>
+      );
+    }
+
+    // Generic Fallback UI for non-transactions
     return (
       <Animated.View
-        key={item.id}
-        entering={FadeInRight.delay(index * 50).duration(400)}
-        layout={Layout.springify()}
-        style={styles.timelineRow}
-      >
-        {/* The Continuous Timeline Line */}
-        {!isLast && <View style={[styles.timelineLine, !item.unread && styles.timelineLineMuted]} />}
-
-        {/* Timeline Node (Icon) */}
-        <View style={styles.nodeColumn}>
-          <View style={[
-            styles.nodeCircle, 
-            item.unread ? { backgroundColor: color, shadowColor: color, elevation: 6 } : styles.nodeCircleMuted
-          ]}>
-            <Vector 
-              as={as as any} 
-              name={icon} 
-              size={18} 
-              color={item.unread ? "#FFF" : "#94A3B8"} 
-            />
-          </View>
-        </View>
-
-        {/* The Chat Bubble Content */}
-        <TouchableOpacity
-          onPress={() => handleNotificationPress(item)}
-          activeOpacity={0.8}
-          style={styles.bubbleColumn}
+          key={item.id}
+          entering={FadeInRight.delay(index * 50).duration(400)}
+          layout={Layout.springify()}
+          style={styles.cardRow}
         >
-          <View style={[
-            styles.bubbleCard, 
-            item.unread ? styles.bubbleCardUnread : styles.bubbleCardRead
-          ]}>
-            {/* The little pointer pointing to the node */}
-            <View style={[styles.bubblePointer, item.unread ? styles.bubblePointerUnread : styles.bubblePointerRead]} />
+        <TouchableOpacity
+            onPress={() => handleNotificationPress(item)}
+            activeOpacity={0.9}
+            style={[styles.genericCard, item.unread ? styles.receiptCardUnread : null]}
+          >
+            <View style={styles.genericHeader}>
+               <View style={[styles.genericIconBox, { backgroundColor: `${color}1A` }]}>
+                  <Vector as={as as any} name={icon} size={16} color={color} />
+               </View>
+               <Text style={styles.genericTitle}>{item.type}</Text>
+               {item.unread && <View style={styles.unreadDotGeneric} />}
+            </View>
             
-            <View style={styles.bubbleHeader}>
-              <Text style={[styles.bubbleTitle, item.unread ? { color: color } : styles.bubbleTitleRead]}>
-                {item.type}
-              </Text>
-              <Text style={styles.bubbleDate}>{dateStr}</Text>
+            <Text style={styles.genericDesc}>{item.description}</Text>
+            
+            <View style={styles.genericFooter}>
+               <Text style={styles.footerDate}>{dateStr} • {timeStr}</Text>
             </View>
-
-            <Text style={[styles.bubbleDesc, !item.unread && styles.bubbleDescRead]} numberOfLines={3}>
-              {item.description}
-            </Text>
-
-            <View style={styles.bubbleFooter}>
-              <Text style={styles.bubbleTime}>{timeStr}</Text>
-              {item.unread ? (
-                <View style={[styles.statusPill, { backgroundColor: `${color}1A` }]}>
-                  <View style={[styles.statusDot, { backgroundColor: color }]} />
-                  <Text style={[styles.statusTxt, { color: color }]}>NEW</Text>
-                </View>
-              ) : (
-                <Text style={styles.viewedTxt}>Viewed</Text>
-              )}
-            </View>
-          </View>
         </TouchableOpacity>
       </Animated.View>
     );
@@ -193,7 +278,6 @@ const Notification = () => {
 
   const unreadItems = notifications.filter((n) => n.unread);
   const readItems = notifications.filter((n) => !n.unread);
-  const allSortedItems = [...unreadItems, ...readItems]; // In case we want to show them together, but we'll keep sections as before.
 
   return (
     <View style={styles.container}>
@@ -216,8 +300,8 @@ const Notification = () => {
               <Vector as="ionicons" name="chevron-back" size={24} color="#FCF5F1" />
             </TouchableOpacity>
             <View style={styles.titleBox}>
-              <Text style={styles.headerTitle}>Activity Timeline</Text>
-              <Text style={styles.headerSub}>Track your transactions & updates</Text>
+              <Text style={styles.headerTitle}>Notifications</Text>
+              <Text style={styles.headerSub}>Activity & Updates</Text>
             </View>
           </View>
         </SafeAreaView>
@@ -227,7 +311,7 @@ const Notification = () => {
         {loading ? (
           <View style={styles.loader}>
             <ActivityIndicator size="large" color="#FF8E72" />
-            <Text style={styles.loaderTxt}>Loading your timeline...</Text>
+            <Text style={styles.loaderTxt}>Loading your updates...</Text>
           </View>
         ) : error ? (
           <View style={styles.loader}>
@@ -236,8 +320,8 @@ const Notification = () => {
           </View>
         ) : notifications.length === 0 ? (
           <View style={styles.empty}>
-            <Vector as="materialcommunityicons" name="timeline-clock-outline" size={80} color="#E2E8F0" />
-            <Text style={styles.emptyTxt}>No recent activity</Text>
+            <Vector as="materialcommunityicons" name="bell-off-outline" size={80} color="#E2E8F0" />
+            <Text style={styles.emptyTxt}>No recent notifications</Text>
           </View>
         ) : (
           <ScrollView
@@ -250,8 +334,8 @@ const Notification = () => {
                   <Vector as="feather" name="activity" size={16} color="#FF8E72" style={{ marginRight: 8 }} />
                   <Text style={styles.sectionLabel}>NEW ACTIVITY</Text>
                 </View>
-                <View style={styles.timelineContainer}>
-                  {unreadItems.map((item, idx) => renderItem(item, idx, idx === unreadItems.length - 1 && readItems.length === 0))}
+                <View style={styles.listContainer}>
+                  {unreadItems.map((item, idx) => renderItem(item, idx))}
                 </View>
               </View>
             )}
@@ -262,8 +346,8 @@ const Notification = () => {
                   <Vector as="feather" name="clock" size={16} color="#94A3B8" style={{ marginRight: 8 }} />
                   <Text style={[styles.sectionLabel, { color: '#94A3B8' }]}>PAST ACTIVITY</Text>
                 </View>
-                <View style={styles.timelineContainer}>
-                  {readItems.map((item, idx) => renderItem(item, idx + unreadItems.length, idx === readItems.length - 1))}
+                <View style={styles.listContainer}>
+                  {readItems.map((item, idx) => renderItem(item, idx + unreadItems.length))}
                 </View>
               </View>
             )}
@@ -277,7 +361,7 @@ const Notification = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#FCF5F1", // Peach cream background
+    backgroundColor: "#F8FAFC", // Light background for contrast
   },
   headerWrapper: {
     paddingBottom: 25,
@@ -336,8 +420,8 @@ const styles = StyleSheet.create({
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
-    paddingLeft: 10,
+    marginBottom: 15,
+    paddingLeft: 5,
   },
   sectionLabel: {
     fontSize: RFValue(9),
@@ -345,160 +429,218 @@ const styles = StyleSheet.create({
     color: "#3B2F2F",
     letterSpacing: 1.5,
   },
-  timelineContainer: {
+  listContainer: {
+    gap: 15, // Space between cards
+  },
+  cardRow: {
+    width: '100%',
+  },
+  receiptCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(59, 47, 47, 0.05)',
+    padding: 16,
+    paddingBottom: 12,
     position: 'relative',
-  },
-  timelineRow: {
-    flexDirection: 'row',
-    position: 'relative',
-    marginBottom: 25,
-  },
-  timelineLine: {
-    position: 'absolute',
-    top: 36, // Start below the node
-    bottom: -35, // Reach the next node
-    left: 27, // Center of the 54px nodeColumn
-    width: 2,
-    backgroundColor: 'rgba(255, 142, 114, 0.4)', // Peach glow
-    zIndex: 0,
-  },
-  timelineLineMuted: {
-    backgroundColor: 'rgba(148, 163, 184, 0.2)', // Gray line for read items
-  },
-  nodeColumn: {
-    width: 56,
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  nodeCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#FCF5F1', // Matches app bg to look carved out
     ...Platform.select({
-      ios: { shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 6 },
+      ios: { shadowColor: '#3B2F2F', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 8 },
+      android: { elevation: 2 },
     }),
   },
-  nodeCircleMuted: {
-    backgroundColor: '#FCF5F1',
+  receiptCardUnread: {
     borderWidth: 1.5,
-    borderColor: '#CBD5E1',
-    elevation: 0,
-    shadowOpacity: 0,
+    borderColor: '#FF8E72',
   },
-  bubbleColumn: {
-    flex: 1,
-    paddingRight: 10,
-  },
-  bubbleCard: {
-    backgroundColor: '#FFF',
-    borderRadius: 20,
-    borderTopLeftRadius: 4, // Makes it look like a bubble pointing left
-    padding: 18,
-    position: 'relative',
-  },
-  bubbleCardUnread: {
-    borderWidth: 1,
-    borderColor: 'rgba(255, 142, 114, 0.15)',
-    ...Platform.select({
-      ios: { shadowColor: '#3B2F2F', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.06, shadowRadius: 10 },
-      android: { elevation: 3 },
-    }),
-  },
-  bubbleCardRead: {
-    backgroundColor: 'rgba(255, 255, 255, 0.6)',
-    borderWidth: 1,
-    borderColor: 'rgba(59, 47, 47, 0.05)',
-  },
-  bubblePointer: {
-    position: 'absolute',
-    left: -6,
-    top: 0,
-    width: 12,
-    height: 12,
-    backgroundColor: '#FFF',
-    borderTopLeftRadius: 3,
-    transform: [{ rotate: '-45deg' }],
-  },
-  bubblePointerUnread: {
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderColor: 'rgba(255, 142, 114, 0.15)',
-  },
-  bubblePointerRead: {
-    backgroundColor: 'rgba(255, 255, 255, 0.6)',
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderColor: 'rgba(59, 47, 47, 0.05)',
-  },
-  bubbleHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  bubbleTitle: {
-    fontSize: RFValue(12),
-    fontFamily: FONTS.bold,
-  },
-  bubbleTitleRead: {
-    color: '#64748B',
-  },
-  bubbleDate: {
-    fontSize: RFValue(8),
-    fontFamily: FONTS.bold,
-    color: '#94A3B8',
-  },
-  bubbleDesc: {
-    fontSize: RFValue(11),
-    fontFamily: FONTS.medium,
-    color: '#3B2F2F',
-    lineHeight: RFValue(18),
-  },
-  bubbleDescRead: {
-    color: '#64748B',
-  },
-  bubbleFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 15,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(59, 47, 47, 0.05)',
-  },
-  bubbleTime: {
-    fontSize: RFValue(9),
-    fontFamily: FONTS.bold,
-    color: '#CBD5E1',
-  },
-  statusPill: {
+  statusHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    justifyContent: 'center',
+    paddingVertical: 6,
     borderRadius: 8,
-    gap: 4,
+    marginBottom: 16,
+    gap: 6,
   },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  statusTxt: {
-    fontSize: RFValue(8),
+  statusHeaderText: {
+    fontSize: RFValue(10),
     fontFamily: FONTS.bold,
     letterSpacing: 0.5,
   },
-  viewedTxt: {
-    fontSize: RFValue(9),
-    fontFamily: FONTS.bold,
-    color: '#CBD5E1',
-    fontStyle: 'italic',
+  participantRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
   },
+  participant: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    flex: 1,
+    justifyContent: 'center',
+  },
+  participantLabel: {
+    fontSize: RFValue(10),
+    fontFamily: FONTS.medium,
+    color: '#94A3B8',
+  },
+  participantName: {
+    fontSize: RFValue(10),
+    fontFamily: FONTS.bold,
+    color: '#3B2F2F',
+  },
+  countryCode: {
+    fontSize: RFValue(10),
+    fontFamily: FONTS.bold,
+    color: '#64748B',
+    marginRight: 4,
+  },
+  flagStyle: {
+    width: 14,
+    height: 10,
+    borderRadius: 2,
+  },
+  detailsBox: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+  },
+  detailItem: {
+    flex: 1,
+  },
+  detailItemEnd: {
+    flex: 1,
+    alignItems: 'flex-end',
+  },
+  detailLabel: {
+    fontSize: RFValue(9),
+    fontFamily: FONTS.medium,
+    color: '#94A3B8',
+    marginBottom: 4,
+  },
+  detailValue: {
+    fontSize: RFValue(12),
+    fontFamily: FONTS.bold,
+    color: '#3B2F2F',
+  },
+  detailValueMode: {
+    fontSize: RFValue(11),
+    fontFamily: FONTS.bold,
+    color: '#3B2F2F',
+  },
+  dashedContainer: {
+    overflow: 'hidden',
+    height: 2,
+    marginBottom: 16,
+  },
+  dashedLine: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+    borderStyle: 'dashed',
+    width: '100%',
+  },
+  receiptFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  footerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  footerModeText: {
+    fontSize: RFValue(8),
+    fontFamily: FONTS.bold,
+    color: '#64748B',
+    letterSpacing: 0.5,
+  },
+  footerCenter: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  footerDate: {
+    fontSize: RFValue(8.5),
+    fontFamily: FONTS.medium,
+    color: '#94A3B8',
+  },
+  footerRight: {
+    flex: 1,
+    alignItems: 'flex-end',
+  },
+  transIdText: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    fontSize: RFValue(8.5),
+    fontFamily: FONTS.bold,
+    color: '#64748B',
+  },
+  unreadDot: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#FF8E72',
+    borderWidth: 2,
+    borderColor: '#FFF',
+  },
+  
+  // Generic Card Styles
+  genericCard: {
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(59, 47, 47, 0.05)',
+    position: 'relative',
+    ...Platform.select({
+      ios: { shadowColor: '#3B2F2F', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 8 },
+      android: { elevation: 2 },
+    }),
+  },
+  genericHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  genericIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  genericTitle: {
+    fontSize: RFValue(12),
+    fontFamily: FONTS.bold,
+    color: '#3B2F2F',
+  },
+  genericDesc: {
+    fontSize: RFValue(11),
+    fontFamily: FONTS.medium,
+    color: '#64748B',
+    lineHeight: RFValue(16),
+    marginBottom: 12,
+  },
+  genericFooter: {
+    alignItems: 'flex-end',
+  },
+  unreadDotGeneric: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#FF8E72',
+    marginLeft: 8,
+  },
+  
   loader: {
     flex: 1,
     justifyContent: "center",

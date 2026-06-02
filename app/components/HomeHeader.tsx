@@ -109,7 +109,8 @@ const HomeHeader = ({ reward, currency, balance }: IProps) => {
     if (isFocused) fetchNotifications();
   }, [isFocused]);
 
-  const hasUnread = notifications.some((n) => n.unread);
+  const unreadCount = notifications.filter((n) => n.unread).length;
+  const hasUnread = unreadCount > 0;
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -153,7 +154,13 @@ const HomeHeader = ({ reward, currency, balance }: IProps) => {
             style={localStyles.glassBtn}
           >
             <Vector as="ionicons" name="notifications-outline" size={24} color="#3B2F2F" />
-            {hasUnread && <View style={localStyles.notifBadge} />}
+            {hasUnread && (
+              <View style={localStyles.notifBadge}>
+                <Text style={localStyles.notifBadgeText}>
+                  {unreadCount > 99 ? "99+" : unreadCount}
+                </Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
 
@@ -331,14 +338,22 @@ const localStyles = StyleSheet.create({
   },
   notifBadge: {
     position: 'absolute',
-    top: 13,
-    right: 13,
-    width: 9,
-    height: 9,
-    borderRadius: 4.5,
+    top: 8,
+    right: 8,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
     backgroundColor: '#FF8E72',
     borderWidth: 1.5,
     borderColor: '#FFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  notifBadgeText: {
+    color: '#FFF',
+    fontSize: RFValue(8),
+    fontFamily: FONTS.bold,
   },
   heroContent: {
     alignItems: 'center',
