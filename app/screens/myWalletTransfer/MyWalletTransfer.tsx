@@ -10,13 +10,15 @@ import {
   StyleSheet,
   ActivityIndicator,
   Platform,
+  Modal,
 } from "react-native";
 import { RFValue } from "react-native-responsive-fontsize";
 import { useRecoilValue } from "recoil";
 import { useIsFocused, useNavigation } from "@react-navigation/native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { ProfileState } from "../../atoms";
-import { GetWalletBalance, WalletTransfer } from "app/http-services";
+import { GetWalletBalance, WalletTransfer, GenerateOTP, ValidateOTP, CheckTPINStatus, CreateTPIN, VerifyTPIN, ResetTPIN, ChangeTPIN } from "app/http-services";
 import { FONTS, SIZES } from "../../constants/Assets";
 
 import Container from "app/theme/Container";
@@ -59,6 +61,52 @@ const MyWalletTransfer = () => {
 
   const [showToast, setShowToast] = useState(false);
   const [toastMsg, setToastMsg] = useState("");
+
+  // TPIN state variables
+  const [openVerifyTpin, setOpenVerifyTpin] = useState(false);
+  const [openSetTpin, setOpenSetTpin] = useState(false);
+  const [tpinValues, setTpinValues] = useState<any>(null);
+  const [hasTpinApiState, setHasTpinApiState] = useState<boolean>(false);
+  const [checkTpinLoading, setCheckTpinLoading] = useState(false);
+
+  // TPIN Setup Form states
+  const [setupPin, setSetupPin] = useState("");
+  const [setupConfirmPin, setSetupConfirmPin] = useState("");
+  const [setupLoading, setSetupLoading] = useState(false);
+  const [showSetupPin, setShowSetupPin] = useState(false);
+  const [showConfirmPin, setShowConfirmPin] = useState(false);
+
+  // TPIN OTP states
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [otpChannel, setOtpChannel] = useState<string>("MOBILE");
+  const [otpValue, setOtpValue] = useState("");
+  const [isOtpSent, setIsOtpSent] = useState(false);
+  const [otpTimer, setOtpTimer] = useState(0);
+  const [isOtpVerified, setIsOtpVerified] = useState(false);
+  const [verifyOtpLoading, setVerifyOtpLoading] = useState(false);
+
+  // TPIN Verification Form states
+  const [enteredPin, setEnteredPin] = useState("");
+  const [showEnteredPin, setShowEnteredPin] = useState(false);
+  const [verifyLoading, setVerifyLoading] = useState(false);
+
+  // TPIN Reset Form states
+  const [openResetTpin, setOpenResetTpin] = useState(false);
+  const [resetPin, setResetPin] = useState("");
+  const [resetConfirmPin, setResetConfirmPin] = useState("");
+  const [showResetPin, setShowResetPin] = useState(false);
+  const [showResetConfirmPin, setShowResetConfirmPin] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+
+  // TPIN Change Form states
+  const [openChangeTpin, setOpenChangeTpin] = useState(false);
+  const [oldTpin, setOldTpin] = useState("");
+  const [newTpin, setNewTpin] = useState("");
+  const [confirmNewTpin, setConfirmNewTpin] = useState("");
+  const [showOldTpin, setShowOldTpin] = useState(false);
+  const [showNewTpin, setShowNewTpin] = useState(false);
+  const [showConfirmNewTpin, setShowConfirmNewTpin] = useState(false);
+  const [changeLoading, setChangeLoading] = useState(false);
 
   // Animations
   const shimmer = useSharedValue(0);
@@ -119,6 +167,347 @@ const MyWalletTransfer = () => {
     }
   };
 
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const userStr = await AsyncStorage.getItem("user");
+        if (userStr) {
+          setCurrentUser(JSON.parse(userStr));
+        }
+      } catch (error) {
+        console.error("Error fetching user data from storage", error);
+      }
+    };
+    fetchUser();
+  }, [isFocused]);
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (otpTimer > 0) {
+      interval = setInterval(() => {
+        setOtpTimer((prev) => prev - 1);
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [otpTimer]);
+
+  const maskEmail = (emailStr: string) => {
+    if (!emailStr) return "";
+    const [name, domain] = emailStr.split("@");
+    if (name.length <= 3) return `***@${domain}`;
+    return `${name.substring(0, 3)}***@${domain}`;
+  };
+
+  const maskMobile = (mobileStr: string) => {
+    if (!mobileStr) return "";
+    const clean = mobileStr.replace(/[^0-9]/g, "");
+    if (clean.length <= 4) return clean;
+    return `*******${clean.substring(clean.length - 4)}`;
+  };
+
+  const handleSendOtp = async () => {
+    try {
+      const userStr = await AsyncStorage.getItem("user");
+      const user = userStr ? JSON.parse(userStr) : null;
+      if (!user) {
+        setToastMsg("User session not found.");
+        setShowToast(true);
+        return;
+      }
+
+      setOtpTimer(60);
+      setIsOtpVerified(false);
+      setOtpValue("");
+
+      const otpReq = {
+        Email: user.Email || user.email,
+        MobileNumber: user.MobileNumber || user.mobileNo,
+        OTPType: "TP",
+      };
+
+      const res = await GenerateOTP(otpReq);
+      if (res?.data?.StatusCode === "ER0000") {
+        setIsOtpSent(true);
+        setToastMsg(`OTP successfully sent to your ${otpChannel === "EMAIL" ? "email address" : "mobile number"}.`);
+      } else {
+        setOtpTimer(0);
+        setToastMsg(res?.data?.StatusMsg || "Failed to generate OTP");
+      }
+    } catch (error) {
+      console.error("Generate OTP Error: ", error);
+      setOtpTimer(0);
+      setToastMsg("Something went wrong. Please try again.");
+    } finally {
+      setShowToast(true);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    if (!otpValue || otpValue.length < 6) {
+      setToastMsg("Please enter a valid 6-digit OTP");
+      setShowToast(true);
+      return;
+    }
+
+    try {
+      setVerifyOtpLoading(true);
+      const userStr = await AsyncStorage.getItem("user");
+      const user = userStr ? JSON.parse(userStr) : null;
+      if (!user) {
+        setToastMsg("User session not found.");
+        setShowToast(true);
+        setVerifyOtpLoading(false);
+        return;
+      }
+
+      const otpPayload = {
+        email: user.Email || user.email,
+        mobile: user.MobileNumber || user.mobileNo,
+        type: "TP",
+        emailOTP: otpChannel === "EMAIL" ? otpValue : "",
+        mobileOTP: otpChannel === "MOBILE" ? otpValue : ""
+      };
+
+      const otpRes = await ValidateOTP(otpPayload);
+      if (otpRes?.data?.StatusCode === "ER0000") {
+        setIsOtpVerified(true);
+        setToastMsg("OTP verified successfully");
+        setShowToast(true);
+      } else {
+        setToastMsg(otpRes?.data?.StatusMsg || "OTP verification failed");
+        setShowToast(true);
+      }
+    } catch (error) {
+      console.error("Verify OTP Error: ", error);
+      setToastMsg("Something went wrong. Please try again.");
+      setShowToast(true);
+    } finally {
+      setVerifyOtpLoading(false);
+    }
+  };
+
+  const handleSetTpinSubmit = async () => {
+    if (!isOtpVerified) {
+      setToastMsg("Please verify OTP first");
+      setShowToast(true);
+      return;
+    }
+    if (setupPin.length !== 4 || setupConfirmPin.length !== 4) {
+      setToastMsg("TPIN must be exactly 4 digits");
+      setShowToast(true);
+      return;
+    }
+    if (setupPin !== setupConfirmPin) {
+      setToastMsg("TPIN and Confirm TPIN do not match");
+      setShowToast(true);
+      return;
+    }
+
+    try {
+      setSetupLoading(true);
+      const userStr = await AsyncStorage.getItem("user");
+      const user = userStr ? JSON.parse(userStr) : null;
+      if (!user) {
+        setToastMsg("User session not found.");
+        setShowToast(true);
+        setSetupLoading(false);
+        return;
+      }
+
+      const mpinRes = await CreateTPIN({ TPIN: setupPin });
+      if (mpinRes?.data?.StatusCode === "ER0000" || mpinRes?.data?.StatusCode === "0") {
+        user.isMPinGenerated = "Y";
+        await AsyncStorage.setItem("user", JSON.stringify(user));
+
+        setSetupLoading(false);
+        setOpenSetTpin(false);
+        setSetupPin("");
+        setSetupConfirmPin("");
+        setOtpValue("");
+        setIsOtpSent(false);
+        setOtpTimer(0);
+        setIsOtpVerified(false);
+        setShowSetupPin(false);
+        setShowConfirmPin(false);
+        setHasTpinApiState(true);
+        setToastMsg("TPIN created successfully");
+        setShowToast(true);
+
+        setOpenVerifyTpin(true);
+      } else {
+        setSetupLoading(false);
+        setToastMsg(mpinRes?.data?.StatusMsg || "Failed to set TPIN");
+        setShowToast(true);
+      }
+    } catch (error) {
+      console.error("Set TPIN Error: ", error);
+      setSetupLoading(false);
+      setToastMsg("Something went wrong. Please try again.");
+      setShowToast(true);
+    }
+  };
+
+  const handleVerifyTpinSubmit = async () => {
+    if (enteredPin.length !== 4) {
+      setToastMsg("Please enter a 4-digit TPIN");
+      setShowToast(true);
+      return;
+    }
+
+    try {
+      setVerifyLoading(true);
+
+      // Verify TPIN first
+      const verifyRes = await VerifyTPIN({ TPIN: enteredPin });
+      if (verifyRes?.data?.StatusCode === "ER0000" || verifyRes?.data?.StatusCode === "0") {
+        const reqBody = {
+          ToRemitterID: tpinValues.ToRemitterID,
+          Amount: tpinValues.Amount,
+          RemitterEmail: tpinValues.RemitterEmail,
+          TPIN: enteredPin,
+        };
+
+        const res = await WalletTransfer(reqBody);
+
+        const statusCode = res?.data?.StatusCode;
+        if (statusCode !== "ER0098") {
+          setToastMsg(res?.data?.StatusMsg || "Transfer successful");
+          fetchWalletBalance(currentToken.tokenId, currentToken.remitterId);
+
+          setOpenVerifyTpin(false);
+          setEnteredPin("");
+          setShowEnteredPin(false);
+          setReceiverId("");
+          setReceiverName("");
+          setAmount("");
+          setEmail("");
+          setShowTransferForm(false);
+
+          setTimeout(() => {
+            navigation.navigate("HomeDrawer");
+          }, 1500);
+        } else {
+          setOpenVerifyTpin(false);
+          setEnteredPin("");
+          setShowEnteredPin(false);
+          setToastMsg(res?.data?.StatusMsg || "TPIN Blocked. Please reset your TPIN.");
+        }
+      } else {
+        if (verifyRes?.data?.StatusCode === "ER0098" || verifyRes?.data?.StatusCode === "ER0014") {
+          setOpenVerifyTpin(false);
+          setEnteredPin("");
+          setShowEnteredPin(false);
+          setToastMsg(verifyRes?.data?.StatusMsg || "TPIN Blocked. Please reset your TPIN.");
+        } else {
+          setToastMsg(verifyRes?.data?.StatusMsg || "Invalid TPIN. Please try again.");
+        }
+      }
+    } catch (error) {
+      console.error("Wallet Transfer Error: ", error);
+      setToastMsg("Something went wrong. Please try again.");
+    } finally {
+      setShowToast(true);
+      setVerifyLoading(false);
+    }
+  };
+
+  const handleResetTpinSubmit = async () => {
+    if (!isOtpVerified) {
+      setToastMsg("Please verify OTP first");
+      setShowToast(true);
+      return;
+    }
+    if (resetPin.length !== 4 || resetConfirmPin.length !== 4) {
+      setToastMsg("TPIN must be exactly 4 digits");
+      setShowToast(true);
+      return;
+    }
+    if (resetPin !== resetConfirmPin) {
+      setToastMsg("TPIN and Confirm TPIN do not match");
+      setShowToast(true);
+      return;
+    }
+
+    try {
+      setResetLoading(true);
+      const res = await ResetTPIN({ TPIN: resetPin });
+      if (res?.data?.StatusCode === "ER0000" || res?.data?.StatusCode === "0") {
+        setResetLoading(false);
+        setOpenResetTpin(false);
+        setResetPin("");
+        setResetConfirmPin("");
+        setOtpValue("");
+        setIsOtpSent(false);
+        setOtpTimer(0);
+        setIsOtpVerified(false);
+        setShowResetPin(false);
+        setShowResetConfirmPin(false);
+        setToastMsg("TPIN reset successfully");
+        setShowToast(true);
+        setOpenVerifyTpin(true);
+      } else {
+        setResetLoading(false);
+        setToastMsg(res?.data?.StatusMsg || "Failed to reset TPIN");
+        setShowToast(true);
+      }
+    } catch (error) {
+      console.error("Reset TPIN Error: ", error);
+      setResetLoading(false);
+      setToastMsg("Something went wrong. Please try again.");
+      setShowToast(true);
+    }
+  };
+
+  const handleChangeTpinSubmit = async () => {
+    if (oldTpin.length !== 4) {
+      setToastMsg("Old TPIN must be exactly 4 digits");
+      setShowToast(true);
+      return;
+    }
+    if (newTpin.length !== 4 || confirmNewTpin.length !== 4) {
+      setToastMsg("New TPIN must be exactly 4 digits");
+      setShowToast(true);
+      return;
+    }
+    if (newTpin !== confirmNewTpin) {
+      setToastMsg("New TPIN and Confirm TPIN do not match");
+      setShowToast(true);
+      return;
+    }
+    if (oldTpin === newTpin) {
+      setToastMsg("New TPIN cannot be the same as Old TPIN");
+      setShowToast(true);
+      return;
+    }
+
+    try {
+      setChangeLoading(true);
+      const res = await ChangeTPIN({ OldTPIN: oldTpin, TPIN: newTpin });
+      if (res?.data?.StatusCode === "ER0000" || res?.data?.StatusCode === "0") {
+        setChangeLoading(false);
+        setOpenChangeTpin(false);
+        setOldTpin("");
+        setNewTpin("");
+        setConfirmNewTpin("");
+        setShowOldTpin(false);
+        setShowNewTpin(false);
+        setShowConfirmNewTpin(false);
+        setToastMsg("TPIN changed successfully");
+        setShowToast(true);
+        setOpenVerifyTpin(true);
+      } else {
+        setChangeLoading(false);
+        setToastMsg(res?.data?.StatusMsg || "Failed to change TPIN");
+        setShowToast(true);
+      }
+    } catch (error) {
+      console.error("Change TPIN Error: ", error);
+      setChangeLoading(false);
+      setToastMsg("Something went wrong. Please try again.");
+      setShowToast(true);
+    }
+  };
+
   const handleConfirmTransfer = async () => {
     if (!receiverId || !amount || !email) {
       setToastMsg("Please fill all fields");
@@ -127,41 +516,42 @@ const MyWalletTransfer = () => {
     }
 
     try {
-      setSubmitting(true);
-
-      const reqBody = {
+      setTpinValues({
         ToRemitterID: receiverId,
         Amount: amount,
         RemitterEmail: email,
-        OTP: otp,
-      };
+      });
 
-      const res = await WalletTransfer(reqBody);
+      setCheckTpinLoading(true);
+      try {
+        const checkRes = await CheckTPINStatus({});
+        setCheckTpinLoading(false);
+        const hasTpin = checkRes?.data?.HasTPIN === true;
+        setHasTpinApiState(hasTpin);
+        
+        if (hasTpin) {
+          setOpenVerifyTpin(true);
+        } else {
+          setOpenSetTpin(true);
+        }
+      } catch (err) {
+        setCheckTpinLoading(false);
+        // Fallback to local storage
+        const userStr = await AsyncStorage.getItem("user");
+        const user = userStr ? JSON.parse(userStr) : null;
+        const hasPin = user?.isMPinGenerated === "Y" || user?.IsmPINgenerated === "Y";
+        setHasTpinApiState(hasPin);
 
-      if (res?.data?.StatusCode === "ER0073") {
-        setToastMsg(res.data.StatusMsg);
-        fetchWalletBalance(currentToken.tokenId, currentToken.remitterId);
-      } else {
-        setToastMsg(res?.data?.StatusMsg || "Transaction failed. Please try again.");
+        if (hasPin) {
+          setOpenVerifyTpin(true);
+        } else {
+          setOpenSetTpin(true);
+        }
       }
-
-      setReceiverId("");
-      setReceiverName("");
-      setAmount("");
-      setEmail("");
-      setOtp("");
-      setShowTransferForm(false);
-
-      setTimeout(() => {
-        navigation.navigate("HomeDrawer");
-      }, 500);
-
     } catch (error) {
-      console.error("Wallet Transfer Error: ", error);
-      setToastMsg("Something went wrong. Please try again.");
-    } finally {
+      console.error("Error reading user data", error);
+      setToastMsg("Error checking TPIN status");
       setShowToast(true);
-      setSubmitting(false);
     }
   };
 
@@ -394,6 +784,724 @@ const MyWalletTransfer = () => {
 
         </ScrollView>
       </Container>
+      {/* Set TPIN Modal */}
+      <Modal
+        visible={openSetTpin}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => {
+          setOpenSetTpin(false);
+          setSetupPin("");
+          setSetupConfirmPin("");
+          setOtpValue("");
+          setIsOtpSent(false);
+          setOtpTimer(0);
+          setIsOtpVerified(false);
+          setShowSetupPin(false);
+          setShowConfirmPin(false);
+        }}
+      >
+        <View style={tpinModalStyles.modalContainer}>
+          <View style={tpinModalStyles.modalContent}>
+            <TouchableOpacity
+              style={tpinModalStyles.closeButton}
+              onPress={() => {
+                setOpenSetTpin(false);
+                setSetupPin("");
+                setSetupConfirmPin("");
+                setOtpValue("");
+                setIsOtpSent(false);
+                setOtpTimer(0);
+                setIsOtpVerified(false);
+                setShowSetupPin(false);
+                setShowConfirmPin(false);
+              }}
+            >
+              <Vector as="feather" name="x" size={16} color="#3B2F2F" />
+            </TouchableOpacity>
+
+            <Text style={tpinModalStyles.modalTitle}>Set up Transaction PIN (TPIN)</Text>
+            <Text style={tpinModalStyles.modalDescription}>
+              You need to set up a 4-digit TPIN to secure your transactions.
+            </Text>
+
+            <Text style={tpinModalStyles.sectionLabel}>Verify Identity Via</Text>
+            
+            <View style={tpinModalStyles.channelContainer}>
+              <TouchableOpacity
+                onPress={() => {
+                  setOtpChannel("EMAIL");
+                  setOtpValue("");
+                  setIsOtpSent(false);
+                  setOtpTimer(0);
+                }}
+                style={[
+                  tpinModalStyles.channelCard,
+                  otpChannel === "EMAIL" && tpinModalStyles.channelCardSelected,
+                  { display: 'none' }
+                ]}
+              >
+                <Vector
+                  as="feather"
+                  name="mail"
+                  size={20}
+                  color={otpChannel === "EMAIL" ? "#FF8E72" : "#94a3b8"}
+                  style={{ marginBottom: 6 }}
+                />
+                <Text style={tpinModalStyles.channelTitle}>Email OTP</Text>
+                <Text style={tpinModalStyles.channelValue}>
+                  {currentUser?.Email || currentUser?.email ? maskEmail(currentUser.Email || currentUser.email) : "N/A"}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => {
+                  setOtpChannel("MOBILE");
+                  setOtpValue("");
+                  setIsOtpSent(false);
+                  setOtpTimer(0);
+                }}
+                style={[
+                  tpinModalStyles.channelCard,
+                  otpChannel === "MOBILE" && tpinModalStyles.channelCardSelected,
+                ]}
+              >
+                <Vector
+                  as="feather"
+                  name="smartphone"
+                  size={20}
+                  color={otpChannel === "MOBILE" ? "#FF8E72" : "#94a3b8"}
+                  style={{ marginBottom: 6 }}
+                />
+                <Text style={tpinModalStyles.channelTitle}>SMS OTP</Text>
+                <Text style={tpinModalStyles.channelValue}>
+                  {currentUser?.MobileNumber || currentUser?.mobileNo ? maskMobile(currentUser.MobileNumber || currentUser.mobileNo) : "N/A"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              onPress={handleSendOtp}
+              disabled={otpTimer > 0}
+              style={[
+                tpinModalStyles.otpButton,
+                otpTimer > 0 && { borderColor: "rgba(59, 47, 47, 0.1)" }
+              ]}
+            >
+              <Text style={[tpinModalStyles.otpButtonText, otpTimer > 0 && { color: "#8E7F77" }]}>
+                {otpTimer > 0 ? `Resend OTP in ${otpTimer}s` : isOtpSent ? "Resend OTP Code" : "Send OTP Verification"}
+              </Text>
+            </TouchableOpacity>
+
+            {isOtpSent && (
+              <View style={tpinModalStyles.successAlert}>
+                <Text style={tpinModalStyles.successAlertText}>
+                  ✓ OTP successfully sent to your registered {otpChannel === "EMAIL" ? "email address" : "mobile number"}.
+                </Text>
+              </View>
+            )}
+
+            {isOtpSent && (
+              <View style={tpinModalStyles.inputWrapper}>
+                <Text style={tpinModalStyles.inputLabel}>ENTER OTP CODE</Text>
+                <View style={{ flexDirection: "row", gap: 10 }}>
+                  <TextInput
+                    placeholder="Enter 6-digit OTP"
+                    placeholderTextColor="#94a3b8"
+                    keyboardType="numeric"
+                    maxLength={6}
+                    editable={!isOtpVerified}
+                    value={otpValue}
+                    onChangeText={(val) => setOtpValue(val.replace(/[^0-9]/g, ''))}
+                    style={[tpinModalStyles.textInput, { flex: 1 }]}
+                  />
+                  <TouchableOpacity
+                    onPress={handleVerifyOtp}
+                    disabled={otpValue.length < 6 || verifyOtpLoading || isOtpVerified}
+                    style={[
+                      tpinModalStyles.otpVerifyBtn,
+                      isOtpVerified && { backgroundColor: "#10b981" },
+                      (otpValue.length < 6 && !isOtpVerified) && { opacity: 0.5 }
+                    ]}
+                  >
+                    {verifyOtpLoading ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <Text style={tpinModalStyles.otpVerifyBtnText}>
+                        {isOtpVerified ? "Verified" : "Verify"}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+            <View style={tpinModalStyles.inputWrapper}>
+              <Text style={tpinModalStyles.inputLabel}>NEW 4-DIGIT TPIN</Text>
+              <View style={tpinModalStyles.inputWithIconRow}>
+                <TextInput
+                  placeholder="Enter 4-digit TPIN"
+                  placeholderTextColor="#94a3b8"
+                  keyboardType="numeric"
+                  maxLength={4}
+                  secureTextEntry={!showSetupPin}
+                  value={setupPin}
+                  onChangeText={(val) => setSetupPin(val.replace(/[^0-9]/g, ''))}
+                  style={tpinModalStyles.textInputClean}
+                />
+                <TouchableOpacity onPress={() => setShowSetupPin(!showSetupPin)}>
+                  <Vector
+                    as="feather"
+                    name={showSetupPin ? "eye" : "eye-off"}
+                    size={20}
+                    color="#94a3b8"
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={tpinModalStyles.inputWrapper}>
+              <Text style={tpinModalStyles.inputLabel}>CONFIRM 4-DIGIT TPIN</Text>
+              <View style={tpinModalStyles.inputWithIconRow}>
+                <TextInput
+                  placeholder="Confirm 4-digit TPIN"
+                  placeholderTextColor="#94a3b8"
+                  keyboardType="numeric"
+                  maxLength={4}
+                  secureTextEntry={!showConfirmPin}
+                  value={setupConfirmPin}
+                  onChangeText={(val) => setSetupConfirmPin(val.replace(/[^0-9]/g, ''))}
+                  style={tpinModalStyles.textInputClean}
+                />
+                <TouchableOpacity onPress={() => setShowConfirmPin(!showConfirmPin)}>
+                  <Vector
+                    as="feather"
+                    name={showConfirmPin ? "eye" : "eye-off"}
+                    size={20}
+                    color="#94a3b8"
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={tpinModalStyles.modalButtonRow}>
+              <TouchableOpacity
+                onPress={() => {
+                  setOpenSetTpin(false);
+                  setSetupPin("");
+                  setSetupConfirmPin("");
+                  setOtpValue("");
+                  setIsOtpSent(false);
+                  setOtpTimer(0);
+                  setIsOtpVerified(false);
+                  setShowSetupPin(false);
+                  setShowConfirmPin(false);
+                }}
+                disabled={setupLoading}
+                style={tpinModalStyles.modalCancelButton}
+              >
+                <Text style={tpinModalStyles.modalCancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleSetTpinSubmit}
+                disabled={setupPin.length !== 4 || setupConfirmPin.length !== 4 || setupLoading}
+                style={[
+                  tpinModalStyles.modalConfirmButton,
+                  (setupPin.length !== 4 || setupConfirmPin.length !== 4) && { opacity: 0.5 }
+                ]}
+              >
+                {setupLoading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={tpinModalStyles.modalConfirmButtonText}>Set TPIN</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Verify TPIN Modal */}
+      <Modal
+        visible={openVerifyTpin}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => {
+          setOpenVerifyTpin(false);
+          setEnteredPin("");
+          setShowEnteredPin(false);
+        }}
+      >
+        <View style={tpinModalStyles.modalContainer}>
+          <View style={tpinModalStyles.modalContent}>
+            <TouchableOpacity
+              style={tpinModalStyles.closeButton}
+              onPress={() => {
+                setOpenVerifyTpin(false);
+                setEnteredPin("");
+                setShowEnteredPin(false);
+              }}
+            >
+              <Vector as="feather" name="x" size={16} color="#3B2F2F" />
+            </TouchableOpacity>
+
+            <Text style={tpinModalStyles.modalTitle}>Enter Transaction PIN</Text>
+
+            {tpinValues && (
+              <View style={tpinModalStyles.summaryCard}>
+                <View style={tpinModalStyles.summaryRow}>
+                  <Text style={tpinModalStyles.summaryLabel}>Transfer To:</Text>
+                  <Text style={tpinModalStyles.summaryValue}>{tpinValues.ToRemitterID}</Text>
+                </View>
+                <View style={tpinModalStyles.summaryRow}>
+                  <Text style={tpinModalStyles.summaryLabel}>Amount:</Text>
+                  <Text style={tpinModalStyles.summaryAmount}>{currency} {tpinValues.Amount}</Text>
+                </View>
+              </View>
+            )}
+
+            <Text style={tpinModalStyles.modalDescription}>
+              Enter your secure 4-digit TPIN to complete this transfer.
+            </Text>
+
+            <View style={{ width: "65%", alignSelf: "center", position: "relative", marginBottom: 20 }}>
+              <TextInput
+                placeholder="••••"
+                placeholderTextColor="#94a3b8"
+                keyboardType="numeric"
+                maxLength={4}
+                secureTextEntry={!showEnteredPin}
+                value={enteredPin}
+                onChangeText={(val) => setEnteredPin(val.replace(/[^0-9]/g, ''))}
+                style={[
+                  tpinModalStyles.pinCodeInput,
+                  {
+                    width: "100%",
+                    marginBottom: 0,
+                    paddingLeft: 20, 
+                  }
+                ]}
+              />
+              <TouchableOpacity
+                onPress={() => setShowEnteredPin(!showEnteredPin)}
+                style={{
+                  position: "absolute",
+                  right: 12,
+                  top: 0,
+                  bottom: 0,
+                  justifyContent: "center",
+                  alignItems: "center",
+                  zIndex: 2,
+                }}
+              >
+                <Vector
+                  as="feather"
+                  name={showEnteredPin ? "eye" : "eye-off"}
+                  size={20}
+                  color="#94a3b8"
+                />
+              </TouchableOpacity>
+            </View>
+
+            <View style={{ flexDirection: "row", justifyContent: "center", marginBottom: 20, width: "100%", paddingHorizontal: 10 }}>
+              <TouchableOpacity
+                onPress={() => {
+                  setOpenVerifyTpin(false);
+                  setEnteredPin("");
+                  setShowEnteredPin(false);
+                  setOpenChangeTpin(true);
+                }}
+              >
+                <Text style={{ fontSize: 13, color: "#FF8E72", fontFamily: FONTS.bold }}>Change TPIN?</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={tpinModalStyles.modalButtonRow}>
+              <TouchableOpacity
+                onPress={() => {
+                  setOpenVerifyTpin(false);
+                  setEnteredPin("");
+                  setShowEnteredPin(false);
+                }}
+                disabled={verifyLoading}
+                style={tpinModalStyles.modalCancelButton}
+              >
+                <Text style={tpinModalStyles.modalCancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleVerifyTpinSubmit}
+                disabled={enteredPin.length !== 4 || verifyLoading}
+                style={[
+                  tpinModalStyles.modalConfirmButton,
+                  (enteredPin.length !== 4) && { opacity: 0.5 }
+                ]}
+              >
+                {verifyLoading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={tpinModalStyles.modalConfirmButtonText}>Verify & Transfer</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Reset TPIN Modal */}
+      <Modal
+        visible={openResetTpin}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => {
+          setOpenResetTpin(false);
+          setResetPin("");
+          setResetConfirmPin("");
+          setOtpValue("");
+          setIsOtpSent(false);
+          setOtpTimer(0);
+          setIsOtpVerified(false);
+          setShowResetPin(false);
+          setShowResetConfirmPin(false);
+        }}
+      >
+        <View style={tpinModalStyles.modalContainer}>
+          <View style={tpinModalStyles.modalContent}>
+            <TouchableOpacity
+              style={tpinModalStyles.closeButton}
+              onPress={() => {
+                setOpenResetTpin(false);
+                setResetPin("");
+                setResetConfirmPin("");
+                setOtpValue("");
+                setIsOtpSent(false);
+                setOtpTimer(0);
+                setIsOtpVerified(false);
+                setShowResetPin(false);
+                setShowResetConfirmPin(false);
+              }}
+            >
+              <Vector as="feather" name="x" size={16} color="#3B2F2F" />
+            </TouchableOpacity>
+
+            <Text style={tpinModalStyles.modalTitle}>Reset Transaction PIN</Text>
+            <Text style={tpinModalStyles.modalDescription}>
+              Verify your identity to reset your TPIN.
+            </Text>
+
+            <Text style={tpinModalStyles.sectionLabel}>Verify Identity Via</Text>
+            
+            <View style={tpinModalStyles.channelContainer}>
+              <TouchableOpacity
+                onPress={() => {
+                  setOtpChannel("MOBILE");
+                  setOtpValue("");
+                  setIsOtpSent(false);
+                  setOtpTimer(0);
+                }}
+                style={[
+                  tpinModalStyles.channelCard,
+                  otpChannel === "MOBILE" && tpinModalStyles.channelCardSelected,
+                ]}
+              >
+                <Vector
+                  as="feather"
+                  name="smartphone"
+                  size={20}
+                  color={otpChannel === "MOBILE" ? "#FF8E72" : "#94a3b8"}
+                  style={{ marginBottom: 6 }}
+                />
+                <Text style={tpinModalStyles.channelTitle}>SMS OTP</Text>
+                <Text style={tpinModalStyles.channelValue}>
+                  {currentUser?.MobileNumber || currentUser?.mobileNo ? maskMobile(currentUser.MobileNumber || currentUser.mobileNo) : "N/A"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              onPress={handleSendOtp}
+              disabled={otpTimer > 0}
+              style={[
+                tpinModalStyles.otpButton,
+                otpTimer > 0 && { borderColor: "rgba(59, 47, 47, 0.1)" }
+              ]}
+            >
+              <Text style={[tpinModalStyles.otpButtonText, otpTimer > 0 && { color: "#8E7F77" }]}>
+                {otpTimer > 0 ? `Resend OTP in ${otpTimer}s` : isOtpSent ? "Resend OTP Code" : "Send OTP Verification"}
+              </Text>
+            </TouchableOpacity>
+
+            {isOtpSent && (
+              <View style={tpinModalStyles.successAlert}>
+                <Text style={tpinModalStyles.successAlertText}>
+                  ✓ OTP successfully sent to your registered {otpChannel === "EMAIL" ? "email address" : "mobile number"}.
+                </Text>
+              </View>
+            )}
+
+            {isOtpSent && (
+              <View style={tpinModalStyles.inputWrapper}>
+                <Text style={tpinModalStyles.inputLabel}>ENTER OTP CODE</Text>
+                <View style={{ flexDirection: "row", gap: 10 }}>
+                  <TextInput
+                    placeholder="Enter 6-digit OTP"
+                    placeholderTextColor="#94a3b8"
+                    keyboardType="numeric"
+                    maxLength={6}
+                    editable={!isOtpVerified}
+                    value={otpValue}
+                    onChangeText={(val) => setOtpValue(val.replace(/[^0-9]/g, ''))}
+                    style={[tpinModalStyles.textInput, { flex: 1 }]}
+                  />
+                  <TouchableOpacity
+                    onPress={handleVerifyOtp}
+                    disabled={otpValue.length < 6 || verifyOtpLoading || isOtpVerified}
+                    style={[
+                      tpinModalStyles.otpVerifyBtn,
+                      isOtpVerified && { backgroundColor: "#10b981" },
+                      (otpValue.length < 6 && !isOtpVerified) && { opacity: 0.5 }
+                    ]}
+                  >
+                    {verifyOtpLoading ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <Text style={tpinModalStyles.otpVerifyBtnText}>
+                        {isOtpVerified ? "Verified" : "Verify"}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+            <View style={tpinModalStyles.inputWrapper}>
+              <Text style={tpinModalStyles.inputLabel}>NEW 4-DIGIT TPIN</Text>
+              <View style={tpinModalStyles.inputWithIconRow}>
+                <TextInput
+                  placeholder="Enter 4-digit TPIN"
+                  placeholderTextColor="#94a3b8"
+                  keyboardType="numeric"
+                  maxLength={4}
+                  secureTextEntry={!showResetPin}
+                  value={resetPin}
+                  onChangeText={(val) => setResetPin(val.replace(/[^0-9]/g, ''))}
+                  style={tpinModalStyles.textInputClean}
+                />
+                <TouchableOpacity onPress={() => setShowResetPin(!showResetPin)}>
+                  <Vector
+                    as="feather"
+                    name={showResetPin ? "eye" : "eye-off"}
+                    size={20}
+                    color="#94a3b8"
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={tpinModalStyles.inputWrapper}>
+              <Text style={tpinModalStyles.inputLabel}>CONFIRM 4-DIGIT TPIN</Text>
+              <View style={tpinModalStyles.inputWithIconRow}>
+                <TextInput
+                  placeholder="Confirm 4-digit TPIN"
+                  placeholderTextColor="#94a3b8"
+                  keyboardType="numeric"
+                  maxLength={4}
+                  secureTextEntry={!showResetConfirmPin}
+                  value={resetConfirmPin}
+                  onChangeText={(val) => setResetConfirmPin(val.replace(/[^0-9]/g, ''))}
+                  style={tpinModalStyles.textInputClean}
+                />
+                <TouchableOpacity onPress={() => setShowResetConfirmPin(!showResetConfirmPin)}>
+                  <Vector
+                    as="feather"
+                    name={showResetConfirmPin ? "eye" : "eye-off"}
+                    size={20}
+                    color="#94a3b8"
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={tpinModalStyles.modalButtonRow}>
+              <TouchableOpacity
+                onPress={() => {
+                  setOpenResetTpin(false);
+                  setResetPin("");
+                  setResetConfirmPin("");
+                  setOtpValue("");
+                  setIsOtpSent(false);
+                  setOtpTimer(0);
+                  setIsOtpVerified(false);
+                  setShowResetPin(false);
+                  setShowResetConfirmPin(false);
+                }}
+                disabled={resetLoading}
+                style={tpinModalStyles.modalCancelButton}
+              >
+                <Text style={tpinModalStyles.modalCancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleResetTpinSubmit}
+                disabled={resetPin.length !== 4 || resetConfirmPin.length !== 4 || resetLoading}
+                style={[
+                  tpinModalStyles.modalConfirmButton,
+                  (resetPin.length !== 4 || resetConfirmPin.length !== 4) && { opacity: 0.5 }
+                ]}
+              >
+                {resetLoading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={tpinModalStyles.modalConfirmButtonText}>Reset TPIN</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Change TPIN Modal */}
+      <Modal
+        visible={openChangeTpin}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => {
+          setOpenChangeTpin(false);
+          setOldTpin("");
+          setNewTpin("");
+          setConfirmNewTpin("");
+          setShowOldTpin(false);
+          setShowNewTpin(false);
+          setShowConfirmNewTpin(false);
+        }}
+      >
+        <View style={tpinModalStyles.modalContainer}>
+          <View style={tpinModalStyles.modalContent}>
+            <TouchableOpacity
+              style={tpinModalStyles.closeButton}
+              onPress={() => {
+                setOpenChangeTpin(false);
+                setOldTpin("");
+                setNewTpin("");
+                setConfirmNewTpin("");
+                setShowOldTpin(false);
+                setShowNewTpin(false);
+                setShowConfirmNewTpin(false);
+              }}
+            >
+              <Vector as="feather" name="x" size={16} color="#3B2F2F" />
+            </TouchableOpacity>
+
+            <Text style={tpinModalStyles.modalTitle}>Change Transaction PIN</Text>
+            <Text style={tpinModalStyles.modalDescription}>
+              Enter your current TPIN and set a new one.
+            </Text>
+
+            <View style={tpinModalStyles.inputWrapper}>
+              <Text style={tpinModalStyles.inputLabel}>CURRENT 4-DIGIT TPIN</Text>
+              <View style={tpinModalStyles.inputWithIconRow}>
+                <TextInput
+                  placeholder="Enter current TPIN"
+                  placeholderTextColor="#94a3b8"
+                  keyboardType="numeric"
+                  maxLength={4}
+                  secureTextEntry={!showOldTpin}
+                  value={oldTpin}
+                  onChangeText={(val) => setOldTpin(val.replace(/[^0-9]/g, ''))}
+                  style={tpinModalStyles.textInputClean}
+                />
+                <TouchableOpacity onPress={() => setShowOldTpin(!showOldTpin)}>
+                  <Vector
+                    as="feather"
+                    name={showOldTpin ? "eye" : "eye-off"}
+                    size={20}
+                    color="#94a3b8"
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={tpinModalStyles.inputWrapper}>
+              <Text style={tpinModalStyles.inputLabel}>NEW 4-DIGIT TPIN</Text>
+              <View style={tpinModalStyles.inputWithIconRow}>
+                <TextInput
+                  placeholder="Enter new TPIN"
+                  placeholderTextColor="#94a3b8"
+                  keyboardType="numeric"
+                  maxLength={4}
+                  secureTextEntry={!showNewTpin}
+                  value={newTpin}
+                  onChangeText={(val) => setNewTpin(val.replace(/[^0-9]/g, ''))}
+                  style={tpinModalStyles.textInputClean}
+                />
+                <TouchableOpacity onPress={() => setShowNewTpin(!showNewTpin)}>
+                  <Vector
+                    as="feather"
+                    name={showNewTpin ? "eye" : "eye-off"}
+                    size={20}
+                    color="#94a3b8"
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={tpinModalStyles.inputWrapper}>
+              <Text style={tpinModalStyles.inputLabel}>CONFIRM NEW TPIN</Text>
+              <View style={tpinModalStyles.inputWithIconRow}>
+                <TextInput
+                  placeholder="Confirm new TPIN"
+                  placeholderTextColor="#94a3b8"
+                  keyboardType="numeric"
+                  maxLength={4}
+                  secureTextEntry={!showConfirmNewTpin}
+                  value={confirmNewTpin}
+                  onChangeText={(val) => setConfirmNewTpin(val.replace(/[^0-9]/g, ''))}
+                  style={tpinModalStyles.textInputClean}
+                />
+                <TouchableOpacity onPress={() => setShowConfirmNewTpin(!showConfirmNewTpin)}>
+                  <Vector
+                    as="feather"
+                    name={showConfirmNewTpin ? "eye" : "eye-off"}
+                    size={20}
+                    color="#94a3b8"
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={tpinModalStyles.modalButtonRow}>
+              <TouchableOpacity
+                onPress={() => {
+                  setOpenChangeTpin(false);
+                  setOldTpin("");
+                  setNewTpin("");
+                  setConfirmNewTpin("");
+                  setShowOldTpin(false);
+                  setShowNewTpin(false);
+                  setShowConfirmNewTpin(false);
+                }}
+                disabled={changeLoading}
+                style={tpinModalStyles.modalCancelButton}
+              >
+                <Text style={tpinModalStyles.modalCancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleChangeTpinSubmit}
+                disabled={oldTpin.length !== 4 || newTpin.length !== 4 || confirmNewTpin.length !== 4 || changeLoading}
+                style={[
+                  tpinModalStyles.modalConfirmButton,
+                  (oldTpin.length !== 4 || newTpin.length !== 4 || confirmNewTpin.length !== 4) && { opacity: 0.5 }
+                ]}
+              >
+                {changeLoading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={tpinModalStyles.modalConfirmButtonText}>Change TPIN</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <ToastConfig visible={showToast} message={toastMsg} onClose={() => setShowToast(false)} />
     </SafeAreaView>
   );
@@ -898,6 +2006,260 @@ const localStyles = StyleSheet.create({
     fontSize: RFValue(15),
     fontFamily: FONTS.bold,
     letterSpacing: 0.5,
+  },
+});
+
+const tpinModalStyles = StyleSheet.create({
+  modalContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+  },
+  modalContent: {
+    backgroundColor: "#fff",
+    borderRadius: 24,
+    padding: 24,
+    width: "90%",
+    maxWidth: 400,
+    position: "relative",
+    shadowColor: "#FF8E72",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 142, 114, 0.1)',
+  },
+  closeButton: {
+    position: "absolute",
+    right: 18,
+    top: 18,
+    zIndex: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(59, 47, 47, 0.05)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontFamily: FONTS.bold,
+    color: "#3B2F2F",
+    textAlign: "center",
+    marginBottom: 8,
+    marginTop: 10,
+  },
+  modalDescription: {
+    fontSize: 13,
+    color: "#8E7F77",
+    textAlign: "center",
+    marginBottom: 24,
+    paddingHorizontal: 10,
+    lineHeight: 18,
+    fontFamily: FONTS.medium,
+  },
+  sectionLabel: {
+    fontSize: 13,
+    fontFamily: FONTS.bold,
+    color: "#3B2F2F",
+    marginBottom: 12,
+    letterSpacing: 0.5,
+  },
+  channelContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 20,
+  },
+  channelCard: {
+    flex: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 10,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: "rgba(59, 47, 47, 0.05)",
+    backgroundColor: "#fafafa",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  channelCardSelected: {
+    borderColor: "#FF8E72",
+    backgroundColor: "rgba(255, 142, 114, 0.05)",
+  },
+  channelTitle: {
+    fontSize: 13,
+    fontFamily: FONTS.bold,
+    color: "#3B2F2F",
+    marginBottom: 4,
+    marginTop: 8,
+  },
+  channelValue: {
+    fontSize: 11,
+    color: "#8E7F77",
+    textAlign: "center",
+    fontFamily: FONTS.medium,
+  },
+  otpButton: {
+    height: 48,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 20,
+    borderWidth: 1.5,
+    borderColor: "#FF8E72",
+    backgroundColor: "transparent",
+  },
+  otpButtonText: {
+    color: "#FF8E72",
+    fontFamily: FONTS.bold,
+    fontSize: 14,
+  },
+  otpVerifyBtn: {
+    backgroundColor: "#FF8E72",
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 20,
+  },
+  otpVerifyBtnText: {
+    color: "#fff",
+    fontFamily: FONTS.bold,
+    fontSize: 14,
+  },
+  successAlert: {
+    backgroundColor: "rgba(16, 185, 129, 0.1)",
+    borderColor: "rgba(16, 185, 129, 0.2)",
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 20,
+  },
+  successAlertText: {
+    color: "#059669",
+    fontSize: 12,
+    fontFamily: FONTS.medium,
+  },
+  inputWrapper: {
+    marginBottom: 16,
+  },
+  inputLabel: {
+    fontSize: 11,
+    fontFamily: FONTS.bold,
+    color: "#8E7F77",
+    marginBottom: 8,
+    letterSpacing: 0.5,
+  },
+  textInput: {
+    borderWidth: 1.5,
+    borderColor: "rgba(59, 47, 47, 0.05)",
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 15,
+    color: "#3B2F2F",
+    backgroundColor: "#fafafa",
+    fontFamily: FONTS.medium,
+  },
+  textInputClean: {
+    padding: 12,
+    fontSize: 15,
+    color: "#3B2F2F",
+    flex: 1,
+    fontFamily: FONTS.medium,
+    height: "100%",
+  },
+  inputWithIconRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1.5,
+    borderColor: "rgba(59, 47, 47, 0.05)",
+    borderRadius: 12,
+    backgroundColor: "#fafafa",
+    height: 50,
+    paddingRight: 12,
+  },
+  modalButtonRow: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 12,
+    marginTop: 20,
+  },
+  modalCancelButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: "rgba(59, 47, 47, 0.1)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalCancelButtonText: {
+    color: "#3B2F2F",
+    fontFamily: FONTS.bold,
+    fontSize: 14,
+  },
+  modalConfirmButton: {
+    backgroundColor: "#FF8E72",
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    minWidth: 120,
+    shadowColor: "#FF8E72",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  modalConfirmButtonText: {
+    color: "#fff",
+    fontFamily: FONTS.bold,
+    fontSize: 14,
+  },
+  summaryCard: {
+    backgroundColor: "rgba(59, 47, 47, 0.02)",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: "rgba(59, 47, 47, 0.05)",
+  },
+  summaryRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  summaryLabel: {
+    fontSize: 13,
+    color: "#8E7F77",
+    fontFamily: FONTS.medium,
+  },
+  summaryValue: {
+    fontSize: 13,
+    fontFamily: FONTS.bold,
+    color: "#3B2F2F",
+  },
+  summaryAmount: {
+    fontSize: 15,
+    fontFamily: FONTS.bold,
+    color: "#FF8E72",
+  },
+  pinCodeInput: {
+    borderWidth: 1.5,
+    borderColor: "rgba(59, 47, 47, 0.1)",
+    borderRadius: 16,
+    paddingVertical: 14,
+    fontSize: 28,
+    textAlign: "center",
+    letterSpacing: 12,
+    fontFamily: FONTS.bold,
+    color: "#3B2F2F",
+    backgroundColor: "#fafafa",
+    width: "65%",
+    alignSelf: "center",
+    marginBottom: 24,
   },
 });
 

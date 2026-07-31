@@ -45,7 +45,7 @@ const axiosInstance = axios.create({
 
 const USER = (typeof process !== 'undefined' && process.env && process.env.APP_USER) || "KashRemit";
 const PASSWORD = (typeof process !== 'undefined' && process.env && process.env.APP_PASSWORD) || "D91880531DC2628EF6D98799641CCE9479326B88D0F37D5269F0715DB61AD97A4CB5F802B1EB97BE98AD924E374119FD5E6E712B4DA4324E6EF9B018F22B5700";
-const CHANNEL = (typeof process !== 'undefined' && process.env && process.env.APP_CHANNEL) || (Platform.OS === 'web' ? "03" : "02");
+const CHANNEL = "02";
 
 
 

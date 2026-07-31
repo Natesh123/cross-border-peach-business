@@ -38,6 +38,11 @@ const TransactionItem = ({ item, variant = 'standard', index = 0 }: IProps) => {
   const [recipientList, setRecipientList] = useState<any[]>([]);
   const [remitterProfile, setRemitterProfile] = useState<any>(null);
 
+  const isWalletTxn = 
+    item.TransactionType === "WALLET" ||
+    item.TransactionMode === "E-Wallet Debit" ||
+    (item.TransID && item.TransID.toString().startsWith("EE"));
+
   const fetchReceiverList = async (tokenId: string, remitterId: string) => {
     try {
       const response = await GetReceiverInfoList(tokenId);
@@ -282,7 +287,7 @@ const TransactionItem = ({ item, variant = 'standard', index = 0 }: IProps) => {
               <Text style={localStyles.glassButtonTxt}>Details</Text>
             </TouchableOpacity>
 
-            {item.TranStatus?.toLowerCase() === 'success' && (
+            {item.TranStatus?.toLowerCase() === 'success' && !isWalletTxn && (
               <TouchableOpacity
                 onPress={() => handleDownload(item)}
                 style={localStyles.peachButtonAction}
@@ -427,7 +432,7 @@ const TransactionItem = ({ item, variant = 'standard', index = 0 }: IProps) => {
                 <Text style={localStyles.statusBadgeTxt}>AUTHENTICATED RECEIPT</Text>
               </View>
 
-              {item.TranStatus?.toLowerCase() === 'success' ? (
+              {item.TranStatus?.toLowerCase() === 'success' && !isWalletTxn ? (
                 <TouchableOpacity onPress={() => handleDownload(item)} style={localStyles.circleGlassBtn}>
                   <Vector as="feather" name="share-2" size={18} color="#3B2F2F" />
                 </TouchableOpacity>
@@ -530,7 +535,7 @@ const TransactionItem = ({ item, variant = 'standard', index = 0 }: IProps) => {
 
             {/* FROSTED ACTION DOCK */}
             <View style={localStyles.quartzActionDock}>
-              {item.TranStatus?.toLowerCase() === 'success' && (
+              {item.TranStatus?.toLowerCase() === 'success' && !isWalletTxn && (
                 <TouchableOpacity
                   onPress={() => { setShowViewModal(false); handleDownload(item); }}
                   activeOpacity={0.9}
