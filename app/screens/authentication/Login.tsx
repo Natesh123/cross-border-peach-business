@@ -109,6 +109,15 @@ const Login = () => {
     loginService(
       postData,
       async (user: any) => {
+        if (user.Is_BusinessType === "Y") {
+          Toast.show({
+            type: "error",
+            text1: "Login",
+            text2: "Account Mismatched",
+          });
+          return;
+        }
+
         setProfileItems({
           remitterId: user.RemitterID,
           firstName: user.FirstName,

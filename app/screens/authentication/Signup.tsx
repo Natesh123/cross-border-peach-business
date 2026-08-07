@@ -276,26 +276,6 @@ const Signup = () => {
                 contentContainerStyle={localStyles.scrollContent}
               >
                 <View style={localStyles.topContentGroup}>
-                  {/* Account Type Toggle inside Card */}
-                  <View style={localStyles.toggleBg}>
-                    <TouchableOpacity
-                      onPress={() => handleAccountTypeChange('personal')}
-                      style={[localStyles.toggleBtn, accountType === 'personal' && localStyles.activeToggle]}
-                    >
-                      <Text style={[localStyles.toggleText, accountType === 'personal' && localStyles.activeToggleText]}>
-                        Personal
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => handleAccountTypeChange('business')}
-                      style={[localStyles.toggleBtn, accountType === 'business' && localStyles.activeToggle]}
-                    >
-                      <Text style={[localStyles.toggleText, accountType === 'business' && localStyles.activeToggleText]}>
-                        Business
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-
                   {/* Input Fields */}
                   <View style={localStyles.inputContainer}>
                     {/* Email */}
