@@ -939,6 +939,8 @@ export const getRequest = (api: string, req: any) => {
     || api === 'GenerateOTP' || api === 'ValidateOTP' || api === 'SetMPIN' || api === 'CheckTPINStatus' || api === 'CreateTPIN' || api === 'VerifyTPIN' || api === 'ResetTPIN' || api === 'ChangeTPIN') {
     postData.request.RemitterID = req.remitterId;
     postData.request.ClientCredentials.TokenID = req.tokenId;
+    if (req.TPIN) postData.request.TPIN = req.TPIN;
+    if (req.OldTPIN) postData.request.OldTPIN = req.OldTPIN;
   }
 
   if (api === 'RemitterLogin') {

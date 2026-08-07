@@ -1,5 +1,6 @@
 import { View, Text, useWindowDimensions, TouchableOpacity, StyleSheet, Platform, Image } from "react-native";
 import React from "react";
+import { scale, verticalScale, moderateScale } from '../../../helpers/responsive';
 import { FONTS, SIZES } from "../../../constants/Assets";
 import { useNavigation } from "@react-navigation/native";
 import Vector from "app/assets/vectors";
@@ -190,24 +191,24 @@ const ActionItem = ({ icon, label, color, iconColor, delay, onPress }: any) => (
 
 const localStyles = StyleSheet.create({
   mainWrapper: {
-    paddingHorizontal: 22,
-    marginTop: 15,
+    paddingHorizontal: scale(22),
+    marginTop: scale(15),
   },
   minimalWrapper: {
-    paddingHorizontal: 20,
-    marginTop: 10,
+    paddingHorizontal: scale(20),
+    marginTop: scale(10),
   },
   membershipCard: {
-    borderRadius: 24,
+    borderRadius: scale(24),
     overflow: 'hidden',
     ...Platform.select({
-      ios: { shadowColor: '#FF8E72', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 15 },
+      ios: { shadowColor: '#FF8E72', shadowOffset: { width: scale(0), height: 8 }, shadowOpacity: 0.15, shadowRadius: 15 },
       android: { elevation: 8 }
     }),
   },
   membershipInner: {
-    padding: 20,
-    height: 140,
+    padding: scale(20),
+    height: verticalScale(140),
     justifyContent: 'space-between',
   },
   memberHeader: {
@@ -222,12 +223,12 @@ const localStyles = StyleSheet.create({
     letterSpacing: 2,
   },
   memberBody: {
-    gap: 8,
+    gap: scale(8),
   },
   perkItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: scale(6),
   },
   perkTxt: {
     fontSize: 9,
@@ -248,57 +249,57 @@ const localStyles = StyleSheet.create({
     opacity: 0.8,
   },
   logoSmall: {
-    width: 40,
-    height: 20,
+    width: scale(40),
+    height: verticalScale(20),
     resizeMode: 'contain',
   },
   shimmerBar: {
     position: 'absolute',
-    top: 0,
-    bottom: 0,
-    width: 80,
+    top: scale(0),
+    bottom: scale(0),
+    width: scale(80),
     backgroundColor: 'rgba(255,255,255,0.1)',
     transform: [{ rotate: '25deg' }],
   },
   cardShadow: {
-    borderRadius: 32,
+    borderRadius: scale(32),
     ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 15 }, shadowOpacity: 0.2, shadowRadius: 20 },
+      ios: { shadowColor: '#000', shadowOffset: { width: scale(0), height: 15 }, shadowOpacity: 0.2, shadowRadius: 20 },
       android: { elevation: 15 }
     }),
   },
   premiumCard: {
-    height: 190,
-    borderRadius: 32,
-    padding: 24,
+    height: verticalScale(190),
+    borderRadius: scale(32),
+    padding: scale(24),
     overflow: 'hidden',
     position: 'relative',
-    borderWidth: 1,
+    borderWidth: scale(1),
     borderColor: 'rgba(255,255,255,0.1)',
   },
   ambientLight: {
     position: 'absolute',
-    top: -50,
-    left: -50,
-    width: 200,
-    height: 200,
-    borderRadius: 100,
+    top: scale(-50),
+    left: scale(-50),
+    width: scale(200),
+    height: verticalScale(200),
+    borderRadius: scale(100),
     backgroundColor: 'rgba(255, 142, 114, 0.1)',
   },
   accentOrb: {
     position: 'absolute',
-    bottom: -40,
-    right: -30,
-    width: 150,
-    height: 150,
-    borderRadius: 75,
+    bottom: scale(-40),
+    right: scale(-30),
+    width: scale(150),
+    height: verticalScale(150),
+    borderRadius: scale(75),
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
   },
   sweepEffect: {
     position: 'absolute',
-    top: 0,
-    bottom: 0,
-    width: 120,
+    top: scale(0),
+    bottom: scale(0),
+    width: scale(120),
     backgroundColor: 'rgba(255,255,255,0.06)',
     transform: [{ rotate: '30deg' }],
   },
@@ -313,12 +314,12 @@ const localStyles = StyleSheet.create({
   badgePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: scale(5),
     backgroundColor: 'rgba(255,255,255,0.15)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 14,
-    borderWidth: 1,
+    paddingHorizontal: scale(12),
+    paddingVertical: scale(6),
+    borderRadius: scale(14),
+    borderWidth: scale(1),
     borderColor: 'rgba(255,255,255,0.2)',
   },
   badgeTxt: {
@@ -328,7 +329,7 @@ const localStyles = StyleSheet.create({
     letterSpacing: 1.5,
   },
   balanceSection: {
-    marginTop: 25,
+    marginTop: scale(25),
   },
   labelSmall: {
     color: 'rgba(255,255,255,0.5)',
@@ -339,13 +340,13 @@ const localStyles = StyleSheet.create({
   amountContainer: {
     flexDirection: 'row',
     alignItems: 'baseline',
-    marginTop: 2,
+    marginTop: scale(2),
   },
   currencySymbol: {
     color: '#FFF',
     fontSize: 18,
     fontFamily: FONTS.bold,
-    marginRight: 4,
+    marginRight: scale(4),
   },
   mainAmount: {
     color: '#FFF',
@@ -365,7 +366,7 @@ const localStyles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   accountMeta: {
-    gap: 3,
+    gap: scale(3),
   },
   metaHeader: {
     color: 'rgba(255,255,255,0.4)',
@@ -380,26 +381,26 @@ const localStyles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   miniLogo: {
-    width: 44,
-    height: 28,
+    width: scale(44),
+    height: verticalScale(28),
     resizeMode: 'contain',
   },
   brandBox: {
-    padding: 2,
+    padding: scale(2),
   },
   actionHub: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 20,
+    marginTop: scale(20),
     backgroundColor: '#fff',
-    padding: 12,
-    borderRadius: 24,
+    padding: scale(12),
+    borderRadius: scale(24),
     shadowColor: '#FF8E72',
-    shadowOffset: { width: 0, height: 10 },
+    shadowOffset: { width: scale(0), height: 10 },
     shadowOpacity: 0.08,
     shadowRadius: 15,
     elevation: 8,
-    borderWidth: 1,
+    borderWidth: scale(1),
     borderColor: 'rgba(255,142,114,0.05)',
   },
   actionWrapper: {
@@ -408,16 +409,16 @@ const localStyles = StyleSheet.create({
   },
   actionBtn: {
     alignItems: 'center',
-    gap: 8,
+    gap: scale(8),
   },
   iconBase: {
-    width: 46,
-    height: 46,
-    borderRadius: 18,
+    width: scale(46),
+    height: verticalScale(46),
+    borderRadius: scale(18),
     justifyContent: 'center',
     alignItems: 'center',
     ...Platform.select({
-      ios: { shadowColor: '#FF8E72', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 6 },
+      ios: { shadowColor: '#FF8E72', shadowOffset: { width: scale(0), height: 4 }, shadowOpacity: 0.2, shadowRadius: 6 },
       android: { elevation: 6 }
     }),
   },

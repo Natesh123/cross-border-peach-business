@@ -9,6 +9,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import RateItem from "./items/RateItem";
 import Vector from "app/assets/vectors";
 import { RFValue } from "react-native-responsive-fontsize";
+import { scale, verticalScale, moderateScale } from '../../../helpers/responsive';
 
 const RateCard = () => {
   const currentToken = useRecoilValue(ProfileState);
@@ -123,27 +124,27 @@ const RateCard = () => {
 
 const localStyles = StyleSheet.create({
   container: {
-    marginVertical: 24,
+    marginVertical: scale(24),
   },
   header: {
-    marginBottom: 20,
-    paddingHorizontal: 25,
+    marginBottom: scale(20),
+    paddingHorizontal: scale(25),
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
   titleSection: {
-    gap: 4,
+    gap: scale(4),
   },
   badgeContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: scale(6),
   },
   badgePulse: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: scale(6),
+    height: verticalScale(6),
+    borderRadius: scale(3),
     backgroundColor: '#FF8E72',
   },
   preTitle: {
@@ -162,16 +163,16 @@ const localStyles = StyleSheet.create({
   viewAllBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: scale(8),
     backgroundColor: '#FFF',
-    paddingLeft: 14,
-    paddingRight: 6,
-    paddingVertical: 6,
-    borderRadius: 20,
-    borderWidth: 1,
+    paddingLeft: scale(14),
+    paddingRight: scale(6),
+    paddingVertical: scale(6),
+    borderRadius: scale(20),
+    borderWidth: scale(1),
     borderColor: 'rgba(59, 47, 47, 0.05)',
     ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 5 },
+      ios: { shadowColor: '#000', shadowOffset: { width: scale(0), height: 2 }, shadowOpacity: 0.05, shadowRadius: 5 },
       android: { elevation: 2 },
     }),
   },
@@ -181,16 +182,16 @@ const localStyles = StyleSheet.create({
     color: '#3B2F2F',
   },
   arrowIcon: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: scale(24),
+    height: verticalScale(24),
+    borderRadius: scale(12),
     backgroundColor: '#FCF5F1',
     justifyContent: 'center',
     alignItems: 'center',
   },
   listContent: {
-    paddingHorizontal: 25,
-    paddingBottom: 10,
+    paddingHorizontal: scale(25),
+    paddingBottom: scale(10),
   }
 });
 

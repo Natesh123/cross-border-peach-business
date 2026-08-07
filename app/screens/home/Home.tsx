@@ -1,5 +1,6 @@
 import { RefreshControl, ScrollView, View, BackHandler, StyleSheet, Platform, StatusBar, Alert, useWindowDimensions, Image, TouchableOpacity, Text } from "react-native";
 import React, { useEffect, useState, useCallback } from "react";
+import moment from "moment";
 import Container from "../../theme/Container";
 import WalletBalanceCard from "./components/WalletBalanceCard";
 import HomeHeader from "../../components/HomeHeader";
@@ -16,6 +17,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import Animated, { FadeInDown, FadeInUp, FadeIn, FadeInLeft, FadeInRight } from "react-native-reanimated";
 import AppStatusBar from "../../components/AppStatusBar";
 import { RFValue } from "react-native-responsive-fontsize";
+import { scale, verticalScale, moderateScale } from '../../helpers/responsive';
 import { FONTS } from "../../constants/Assets";
 import { useNavigation } from "@react-navigation/native";
 import Vector from "../../assets/vectors";
@@ -126,36 +128,104 @@ const Home = () => {
     try {
       if (!tokenId || !remitterId) return;
       setLoading(true);
-      const requestPayload = {
-        tokenId: tokenId,
-        remitterId: remitterId,
-        fromDate: '',
-        numberTranList: '5',
-        toDate: '',
-        tranList: 'COUNT',
-        transId: '',
-        transactionType: 'MONEY_REMITTANCE',
-        walletMode: 'Sendmoney'
-      }
-      const response = GetTransactionDetails(requestPayload);
-      response.then((res: any) => {
-        if (res.status === 200) {
-          const fixedList = (res?.data?.TransDetails || []).map((t: any) => {
-            return {
-              ...t,
-              TransactionMode:
-                !t.TransactionMode || t.TransactionMode.trim() === ""
-                  ? "E-Wallet Debit"
-                  : t.TransactionMode,
-            };
-          });
-          setRecentTransaction(fixedList);
+
+      const reqMoney = GetTransactionDetails({
+        tokenId, remitterId, fromDate: '', numberTranList: '0', toDate: '', tranList: 'COUNT', transId: '', transactionType: 'MONEY_REMITTANCE', walletMode: 'Sendmoney'
+      });
+
+      const reqWallet = GetTransactionDetails({
+        tokenId, remitterId, fromDate: '', numberTranList: '0', toDate: '', tranList: 'COUNT', transId: '', transactionType: 'WALLET', walletMode: 'Wallet Transfer'
+      });
+
+      const reqAirtime = GetTransactionDetails({
+        tokenId, remitterId, fromDate: '', numberTranList: '0', toDate: '', tranList: 'COUNT', transId: '', transactionType: 'AIRTOPUP', walletMode: 'Sendmoney'
+      });
+
+      Promise.allSettled([reqMoney, reqWallet, reqAirtime]).then((results) => {
+        let allTxns: any[] = [];
+        const res1: any = results[0].status === 'fulfilled' ? results[0].value : null;
+        const res2: any = results[1].status === 'fulfilled' ? results[1].value : null;
+        const res3: any = results[2].status === 'fulfilled' ? results[2].value : null;
+
+        if (res1?.status === 200 && res1?.data?.TransDetails) {
+          allTxns = [...allTxns, ...res1.data.TransDetails];
         }
-      })
-        .catch((err) => {
-          console.error('Fetch Transaction details error:', err.response?.data || err.message)
-        })
-        .finally(() => setLoading(false));
+        if (res2?.status === 200 && res2?.data?.TransDetails) {
+          const walletTxns = res2.data.TransDetails.map((t: any) => ({ ...t, TransactionType: 'WALLET' }));
+          console.log("DEBUG_WALLET_DATES:", walletTxns.map((t: any) => t.TransactionDate));
+          console.log("DEBUG_WALLET_TXN_0:", JSON.stringify(walletTxns[0], null, 2));
+          allTxns = [...allTxns, ...walletTxns];
+        }
+        if (res3?.status === 200 && res3?.data?.TransDetails) {
+          allTxns = [...allTxns, ...res3.data.TransDetails];
+        }
+
+        allTxns = allTxns.map((t: any) => ({
+          ...t,
+          TransactionMode: !t.TransactionMode || t.TransactionMode.trim() === "" ? "E-Wallet Debit" : t.TransactionMode,
+        }));
+
+        // Sort by date descending reliably using London offset logic
+        const getLondonOffset = (date: Date): number => {
+          try {
+            const dtf = new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/London', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric', hour12: false });
+            const parts = dtf.formatToParts(date);
+            const getVal = (type: string) => { const part = parts.find(p => p.type === type); return part ? parseInt(part.value, 10) : 0; };
+            const year = getVal('year'); const month = getVal('month') - 1; const day = getVal('day');
+            let hour = getVal('hour'); if (hour === 24) hour = 0;
+            const minute = getVal('minute'); const second = getVal('second');
+            const londonUTCDate = Date.UTC(year, month, day, hour, minute, second);
+            const inputUTCDate = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), date.getUTCHours(), date.getUTCMinutes(), date.getUTCSeconds());
+            return (londonUTCDate - inputUTCDate) / 60000;
+          } catch (e) { return 0; }
+        };
+
+        const parseDateSort = (txn: any) => {
+          const d = txn.TransactionDate;
+          if (!d) return 0;
+          const formats = [
+            "YYYY-MM-DDTHH:mm:ss[Z]",
+            "YYYY-MM-DDTHH:mm:ss.SSS[Z]",
+            "YYYY-MM-DD HH:mm:ss",
+            "M/D/YYYY h:mm:ss A",
+            "MM/DD/YYYY hh:mm:ss A",
+            "DD/MM/YYYY hh:mm:ss A",
+            "DD/MM/YYYY HH:mm:ss",
+            "DD-MM-YYYY hh:mm:ss A",
+            "DD-MM-YYYY HH:mm:ss",
+            "YYYY-MM-DD hh:mm:ss A",
+            "YYYY/MM/DD hh:mm:ss A",
+            "DD-MM-YYYY",
+            "DD/MM/YYYY",
+            "DD-MMM-YYYY",
+            "DD MMM, YYYY",
+            "YYYY/MM/DD",
+            "DD MMM YYYY hh:mm:ss A",
+            "DD MMM YYYY"
+          ];
+          const isWalletTxn = txn.TransactionType === 'WALLET' || txn.TransactionMode === 'E-Wallet Debit' || (txn.TransID && txn.TransID.toString().startsWith("EE"));
+
+          if (!isWalletTxn) {
+            let m = moment.utc(d, formats);
+            if (m.isValid()) {
+              const utcDate = new Date(m.format("YYYY-MM-DDTHH:mm:ss[Z]"));
+              m.subtract(getLondonOffset(utcDate), "minutes");
+              return m.valueOf();
+            }
+          }
+          let m = moment.utc(d, formats, true);
+          if (m.isValid()) return m.valueOf();
+          return moment(new Date(d)).valueOf() || 0;
+        };
+
+        allTxns.sort((a, b) => parseDateSort(b) - parseDateSort(a));
+
+        // Take top 5
+        setRecentTransaction(allTxns.slice(0, 5));
+      }).catch((err) => {
+        console.error('Fetch Transaction details error:', err);
+      }).finally(() => setLoading(false));
+
     } catch (error) {
       console.error('Error fetching Transaction details:', error);
     }
@@ -295,10 +365,10 @@ const localStyles = StyleSheet.create({
   },
   globalBackground: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    top: scale(0),
+    left: scale(0),
+    right: scale(0),
+    bottom: scale(0),
     zIndex: -1,
   },
   floatingSymbol: {
@@ -306,49 +376,49 @@ const localStyles = StyleSheet.create({
     zIndex: -1,
   },
   scrollContent: {
-    paddingBottom: 40,
+    paddingBottom: scale(40),
   },
   dynamicContent: {
-    marginTop: -20,
-    gap: 20,
+    marginTop: scale(-20),
+    gap: scale(20),
   },
   bentoGrid: {
-    marginHorizontal: 20,
-    gap: 15,
+    marginHorizontal: scale(20),
+    gap: scale(15),
   },
   bentoMain: {
-    paddingTop: 5,
+    paddingTop: scale(5),
     overflow: 'hidden',
   },
   bentoRow: {
     flexDirection: 'row',
-    gap: 15,
+    gap: scale(15),
   },
   bentoHalf: {
     flex: 1,
   },
   insightHeader: {
-    marginTop: 25,
-    marginBottom: 15,
-    paddingHorizontal: 25,
+    marginTop: scale(25),
+    marginBottom: scale(15),
+    paddingHorizontal: scale(25),
   },
   badgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 8,
+    gap: scale(6),
+    marginBottom: scale(8),
     backgroundColor: 'rgba(255, 142, 114, 0.08)',
     alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 20,
-    borderWidth: 1,
+    paddingHorizontal: scale(10),
+    paddingVertical: scale(4),
+    borderRadius: scale(20),
+    borderWidth: scale(1),
     borderColor: 'rgba(255, 142, 114, 0.1)',
   },
   liveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: scale(6),
+    height: verticalScale(6),
+    borderRadius: scale(3),
     backgroundColor: '#FF8E72',
   },
   insightBadge: {
@@ -365,37 +435,37 @@ const localStyles = StyleSheet.create({
   },
   referralBento: {
     flex: 1,
-    borderRadius: 32,
+    borderRadius: scale(32),
     overflow: 'hidden',
     ...Platform.select({
-      ios: { shadowColor: '#FF8E72', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 15 },
+      ios: { shadowColor: '#FF8E72', shadowOffset: { width: scale(0), height: 8 }, shadowOpacity: 0.15, shadowRadius: 15 },
       android: { elevation: 8 }
     }),
   },
   referralInner: {
     flex: 1,
-    padding: 22,
+    padding: scale(22),
     justifyContent: 'space-between',
     alignItems: 'center',
   },
   referralGlow: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(255,255,255,0.05)',
-    borderRadius: 32,
+    borderRadius: scale(32),
   },
   giftIconContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: scale(64),
+    height: verticalScale(64),
+    borderRadius: scale(32),
     backgroundColor: 'rgba(255,255,255,0.15)',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
+    borderWidth: scale(1),
     borderColor: 'rgba(255,255,255,0.2)',
   },
   referralTxtBox: {
     alignItems: 'center',
-    gap: 4,
+    gap: scale(4),
   },
   referralTitle: {
     fontSize: RFValue(14),
@@ -413,13 +483,13 @@ const localStyles = StyleSheet.create({
   referralAction: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: scale(8),
     backgroundColor: '#FFF',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 16,
+    paddingHorizontal: scale(16),
+    paddingVertical: scale(10),
+    borderRadius: scale(16),
     ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 8 },
+      ios: { shadowColor: '#000', shadowOffset: { width: scale(0), height: 4 }, shadowOpacity: 0.1, shadowRadius: 8 },
       android: { elevation: 4 }
     }),
   },
@@ -429,22 +499,22 @@ const localStyles = StyleSheet.create({
     color: '#3B2F2F',
   },
   actionArrow: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: scale(20),
+    height: verticalScale(20),
+    borderRadius: scale(10),
     backgroundColor: 'rgba(252, 142, 114, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   activityZone: {
-    marginTop: 10,
+    marginTop: scale(10),
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 25,
-    marginBottom: 15,
+    paddingHorizontal: scale(25),
+    marginBottom: scale(15),
   },
   sectionTitle: {
     fontSize: RFValue(16),

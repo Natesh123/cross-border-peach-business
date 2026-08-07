@@ -3,7 +3,7 @@ const https = require('https');
 const url = require('url');
 
 const PROXY_PORT = 8090;
-const TARGET_BASE ='https://tpinservice.kashremit.com/CashUIMR.svc';
+const TARGET_BASE ='https://servicetokdev.kashremit.com/CashUIMR.svc';
 
 const server = http.createServer((req, res) => {
     // CORS preflight

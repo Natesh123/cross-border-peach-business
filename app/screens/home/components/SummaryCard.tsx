@@ -1,5 +1,6 @@
 import { View, StyleSheet, Alert } from "react-native";
 import React from "react";
+import { scale, verticalScale, moderateScale } from '../../../helpers/responsive';
 import SummaryItem from "./items/SummaryItem";
 import Animated, { FadeInDown } from "react-native-reanimated";
 
@@ -76,12 +77,12 @@ const SummaryCard = ({ currency, value, count, beneficiaries, reward }: IProps) 
 
 const localStyles = StyleSheet.create({
     grid: {
-        gap: 15,
+        gap: scale(15),
         width: '100%',
     },
     row: {
         flexDirection: 'row',
-        gap: 15,
+        gap: scale(15),
     },
     tile: {
         flex: 1,

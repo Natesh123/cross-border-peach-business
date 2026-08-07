@@ -1,13 +1,14 @@
 import { FONTS, SHADOWS, SIZES } from "../constants/Assets";
 import { Dimensions, StyleSheet, Platform } from "react-native";
 import { theme } from '../core/theme';
+import { scale, verticalScale, moderateScale } from '../helpers/responsive';
 const styles = StyleSheet.create({
 
 
 
   homeHeader: {
     backgroundColor: "#FCF5F1",
-    padding: 10,
+    padding: scale(10),
     flexDirection: "row",
     alignItems: "center",
     alignContent: "center",
@@ -20,13 +21,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#FCF5F1",
-    borderRadius: 25,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginRight: 10,
-    borderWidth: 1,
+    borderRadius: scale(25),
+    paddingHorizontal: scale(12),
+    paddingVertical: scale(10),
+    marginRight: scale(10),
+    borderWidth: scale(1),
     borderColor: "#ddd",
-    height: 45,
+    height: verticalScale(45),
   },
 
   searchInput: {
@@ -40,9 +41,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#3B2F2F",
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 20,
+    paddingVertical: scale(8),
+    paddingHorizontal: scale(12),
+    borderRadius: scale(20),
   },
   addButtonText: {
     color: "#FCF5F1",
@@ -54,15 +55,15 @@ const styles = StyleSheet.create({
   headerContainer: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: scale(16),
+    paddingVertical: scale(10),
     backgroundColor: "#FCF5F1",
-    borderBottomWidth: 1,
+    borderBottomWidth: scale(1),
     borderBottomColor: "#ddd",
   },
   backButton: {
-    padding: 4,
-    marginRight: 10,
+    padding: scale(4),
+    marginRight: scale(10),
   },
   headerTitle: {
     fontSize: SIZES.h3,
@@ -74,8 +75,8 @@ const styles = StyleSheet.create({
     fontSize: SIZES.h2,
     fontFamily: FONTS.semibold,
     color: theme.colors.color,
-    paddingVertical: 5,
-    marginBottom: 5,
+    paddingVertical: scale(5),
+    marginBottom: scale(5),
     fontWeight: '600'
   },
 
@@ -89,26 +90,26 @@ const styles = StyleSheet.create({
     fontSize: SIZES.font,
     fontFamily: FONTS.bold,
     color: theme.colors.darkgray,
-    marginBottom: 5,
+    marginBottom: scale(5),
     fontWeight: 'bold',
     marginLeft: "30%"
   },
   recipient: {
-    marginLeft: 20,
+    marginLeft: scale(20),
     fontSize: SIZES.h3,
     fontWeight: 'bold',
     color: theme.colors.darkgray,
     fontFamily: FONTS.regular,
-    paddingVertical: 5,
-    marginBottom: 5
+    paddingVertical: scale(5),
+    marginBottom: scale(5)
   },
   recipients: {
-    marginLeft: 5,
+    marginLeft: scale(5),
     fontSize: SIZES.h3,
     color: theme.colors.darkgray,
     fontFamily: FONTS.regular,
-    paddingVertical: 5,
-    marginTop: -25,
+    paddingVertical: scale(5),
+    marginTop: scale(-25),
     flexWrap: 'wrap',
     width: '100%',
   },
@@ -116,7 +117,7 @@ const styles = StyleSheet.create({
     fontSize: SIZES.p16,
     color: theme.colors.black50,
     fontFamily: FONTS.medium,
-    paddingVertical: 14,
+    paddingVertical: scale(14),
   },
   container: {
 
@@ -125,16 +126,16 @@ const styles = StyleSheet.create({
   },
 
   scrollview: {
-    width: "100%", paddingBottom: 60
+    width: "100%", paddingBottom: scale(60)
   },
   inputContainer: {
-    marginBottom: 15,
+    marginBottom: scale(15),
     flexDirection: 'column',
   },
   inputLabel: {
     color: theme.colors.color,
     fontSize: SIZES.h3,
-    marginVertical: 5,
+    marginVertical: scale(5),
     fontFamily: FONTS.medium
   },
   inputControls: {
@@ -142,16 +143,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#FCF5F1',
     borderColor: '#ddd',
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 12,
+    borderWidth: scale(1),
+    borderRadius: scale(12),
+    paddingHorizontal: scale(12),
   },
   error: {
     fontSize: SIZES.font,
     fontFamily: FONTS.regular,
     color: theme.colors.error,
-    paddingHorizontal: 4,
-    paddingTop: 4,
+    paddingHorizontal: scale(4),
+    paddingTop: scale(4),
   },
   startButton: {
     display: "flex",
@@ -159,15 +160,15 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     flexDirection: "row",
     backgroundColor: theme.colors.secondary,
-    borderRadius: 30,
+    borderRadius: scale(30),
     width: "100%",
-    padding: 10,
-    paddingHorizontal: 25,
+    padding: scale(10),
+    paddingHorizontal: scale(25),
   },
   startIcon: {
-    height: 35,
-    width: 35,
-    borderRadius: 40,
+    height: verticalScale(35),
+    width: scale(35),
+    borderRadius: scale(40),
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
@@ -189,22 +190,22 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 20,
+    marginBottom: scale(20),
   },
   profileIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 50,
+    width: scale(50),
+    height: verticalScale(50),
+    borderRadius: scale(50),
     justifyContent: "center",
     alignItems: "center",
     ...SHADOWS.elevation0,
   },
-  largeButton: { width: "100%", height: 55, paddingVertical: 8, borderRadius: 10 },
-  bottomButton: { width: "100%", padding: 10, position: "absolute", bottom: 0, left: 10 },
+  largeButton: { width: "100%", height: verticalScale(55), paddingVertical: scale(8), borderRadius: 10 },
+  bottomButton: { width: "100%", padding: scale(10), position: "absolute", bottom: scale(0), left: 10 },
   leadingIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 40,
+    width: scale(40),
+    height: verticalScale(40),
+    borderRadius: scale(40),
     justifyContent: "center",
     alignItems: "center",
     marginLeft: -SIZES.p20,
@@ -215,21 +216,21 @@ const styles = StyleSheet.create({
       backgroundColor: theme.colors.secondary,
       borderRadius: SIZES.p20,
       shadowColor: theme.colors.color,
-      shadowOffset: { width: 0, height: 0 },
+      shadowOffset: { width: scale(0), height: 0 },
       shadowOpacity: 0.05,
       shadowRadius: 24,
-      padding: 20,
+      padding: scale(20),
     },
     android: {
       backgroundColor: theme.colors.secondary,
       borderRadius: SIZES.p20,
-      padding: 20,
+      padding: scale(20),
       elevation: 1,
     },
     web: {
       backgroundColor: theme.colors.secondary,
       borderRadius: SIZES.p20,
-      padding: 20,
+      padding: scale(20),
       boxShadow: `0px 0px 24px ${theme.colors.color}0D`, // 0D is ~0.05 opacity
     }
   }) as any,
@@ -274,26 +275,26 @@ const styles = StyleSheet.create({
   selectorStyle: { borderColor: theme.colors.gray10 },
   dropdownContainerStyle: {
     width: '100%',
-    marginTop: 5,
+    marginTop: scale(5),
     borderColor: theme.colors.gray10,
   },
   spacing: {
-    margin: 10
+    margin: scale(10)
   },
   spacing_big: {
-    margin: 30
+    margin: scale(30)
   },
   label: {
     fontWeight: '300',
     fontFamily: FONTS.regular,
-    paddingLeft: 5,
+    paddingLeft: scale(5),
     fontSize: SIZES.p18,
     color: theme.colors.black50,
   },
   input: {
-    height: 50,
+    height: verticalScale(50),
     width: '100%',
-    padding: 12,
+    padding: scale(12),
     fontSize: SIZES.h3,
     fontFamily: FONTS.regular,
     outlineStyle: 'none'
@@ -303,32 +304,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   image_logo: {
-    width: 200,
-    height: 200,
+    width: scale(200),
+    height: verticalScale(200),
     resizeMode: 'contain',
 
   },
   card: {
     backgroundColor: '#FCF5F1',
-    padding: 10,
-    margin: 10,
-    borderRadius: 7,
+    padding: scale(10),
+    margin: scale(10),
+    borderRadius: scale(7),
     elevation: 5,
-    marginTop: 100,
+    marginTop: scale(100),
   },
   forgotPassword: {
     width: '100%',
     alignItems: 'flex-end',
-    marginBottom: 24,
+    marginBottom: scale(24),
   },
   rightSide: {
     width: '100%',
     alignItems: 'flex-end',
-    marginBottom: 24,
+    marginBottom: scale(24),
   },
   row: {
     flexDirection: 'row',
-    marginTop: 4,
+    marginTop: scale(4),
   },
 
   link: {
@@ -337,25 +338,25 @@ const styles = StyleSheet.create({
     color: theme.colors.primary,
   },
   sideMenuProfileIcon: {
-    width: 50,
-    height: 50,
+    width: scale(50),
+    height: verticalScale(50),
     borderRadius: 50 / 2,
     alignSelf: 'center',
     resizeMode: 'contain'
   },
   iconStyle: {
-    width: 15,
-    height: 15,
-    marginHorizontal: 5,
+    width: scale(15),
+    height: verticalScale(15),
+    marginHorizontal: scale(5),
   },
   customItem: {
-    padding: 16,
+    padding: scale(16),
     flexDirection: 'row',
     alignItems: 'center',
   },
   navBar: {
     width: '100%',
-    height: 70,
+    height: verticalScale(70),
     backgroundColor: '#0D0D0D',
     alignContent: 'center',
     justifyContent: 'center'
@@ -379,7 +380,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SIZES.p15,
     textAlign: "center",
     fontFamily: FONTS.monoBold,
-    borderRadius: 50,
+    borderRadius: scale(50),
     backgroundColor: theme.colors.primary,
   },
   walletBalance: {
@@ -396,21 +397,21 @@ const styles = StyleSheet.create({
   walletBalanceBox: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 10,
+    marginBottom: scale(10),
     backgroundColor: theme.colors.white,
-    padding: 10,
-    borderRadius: 10
+    padding: scale(10),
+    borderRadius: scale(10)
   },
   pickerItemsContainer: {
     position: 'absolute',
-    top: 100,
-    left: 50,
-    right: 50,
+    top: scale(100),
+    left: scale(50),
+    right: scale(50),
   },
   picker: {
-    height: 50,
-    width: 200,
-    marginVertical: 12,
+    height: verticalScale(50),
+    width: scale(200),
+    marginVertical: scale(12),
   },
 });
 
