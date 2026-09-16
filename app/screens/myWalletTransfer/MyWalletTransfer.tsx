@@ -14,11 +14,11 @@ import {
 } from "react-native";
 import { RFValue } from "react-native-responsive-fontsize";
 import { useRecoilValue } from "recoil";
-import { useIsFocused, useNavigation } from "@react-navigation/native";
+import { useIsFocused, useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { ProfileState } from "../../atoms";
-import { GetWalletBalance, WalletTransfer, GenerateOTP, ValidateOTP, CheckTPINStatus, CreateTPIN, VerifyTPIN, ResetTPIN, ChangeTPIN } from "app/http-services";
+import { GetWalletBalance, WalletTransfer, WalletRequest, GenerateOTP, ValidateOTP, CheckTPINStatus, CreateTPIN, VerifyTPIN, ResetTPIN, ChangeTPIN } from "app/http-services";
 import { FONTS, SIZES } from "../../constants/Assets";
 
 import Container from "app/theme/Container";
@@ -41,6 +41,8 @@ import Animated, {
 const MyWalletTransfer = () => {
   const { width } = useWindowDimensions();
   const navigation = useNavigation();
+  const route = useRoute<any>();
+  const isFromFundRequest = route.params?.isFromFundRequest || false;
   const currentToken = useRecoilValue(ProfileState);
 
   const isFocused = useIsFocused();
@@ -55,7 +57,7 @@ const MyWalletTransfer = () => {
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
 
-  const [showTransferForm, setShowTransferForm] = useState(false);
+  const [showTransferForm, setShowTransferForm] = useState(isFromFundRequest);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -150,7 +152,21 @@ const MyWalletTransfer = () => {
     const _currency = process.env.CURRENCY_SYMBOL || "£";
     setCurrency(_currency);
     fetchWalletBalance(currentToken.tokenId, currentToken.remitterId);
-  }, [isFocused]);
+    if (route.params?.isFromFundRequest !== undefined) {
+      setShowTransferForm(route.params.isFromFundRequest);
+      if (route.params?.amount) {
+        setAmount(route.params.amount);
+      }
+    }
+  }, [isFocused, route.params]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      return () => {
+        navigation.setParams({ isFromFundRequest: false, amount: "" });
+      };
+    }, [navigation])
+  );
 
   const fetchWalletBalance = async (tokenId: string, remitterId: string) => {
     try {
@@ -367,7 +383,7 @@ const MyWalletTransfer = () => {
           TPIN: enteredPin,
         };
 
-        const res = await WalletTransfer(reqBody);
+        const res = isFromFundRequest ? await WalletRequest(reqBody) : await WalletTransfer(reqBody);
 
         const statusCode = res?.data?.StatusCode;
         if (statusCode !== "ER0098") {
@@ -677,7 +693,7 @@ const MyWalletTransfer = () => {
           ) : (
             <Animated.View entering={FadeInUp.delay(200).duration(600)} style={localStyles.formContainer}>
               <View style={localStyles.formHeader}>
-                <Text style={localStyles.formTitle}>Transfer Details</Text>
+                <Text style={localStyles.formTitle}>{isFromFundRequest ? "Request Details" : "Transfer Details"}</Text>
                 <TouchableOpacity onPress={() => setShowTransferForm(false)} style={localStyles.cancelBtn}>
                   <Vector as="feather" name="x" size={16} color="#3B2F2F" />
                 </TouchableOpacity>
@@ -708,7 +724,7 @@ const MyWalletTransfer = () => {
               </View>
 
               <View style={localStyles.inputGroup}>
-                <Text style={localStyles.inputLabel}>RECEIVER ID</Text>
+                <Text style={localStyles.inputLabel}>{isFromFundRequest ? "SENDER ID" : "RECEIVER ID"}</Text>
                 <View style={[localStyles.inputWrapper, receiverId ? localStyles.inputWrapperActive : null]}>
                   <View style={localStyles.inputIconCont}>
                     <Vector as="feather" name="user" size={18} color={receiverId ? "#FF8E72" : "#94a3b8"} />
@@ -730,7 +746,7 @@ const MyWalletTransfer = () => {
               </View>
 
               <View style={localStyles.inputGroup}>
-                <Text style={localStyles.inputLabel}>VERIFICATION EMAIL</Text>
+                <Text style={localStyles.inputLabel}>{isFromFundRequest ? "SENDER EMAIL" : "VERIFICATION EMAIL"}</Text>
                 <View style={[localStyles.inputWrapper, email ? localStyles.inputWrapperActive : null]}>
                   <View style={localStyles.inputIconCont}>
                     <Vector as="feather" name="mail" size={18} color={email ? "#FF8E72" : "#94a3b8"} />
@@ -771,7 +787,7 @@ const MyWalletTransfer = () => {
                       <ActivityIndicator color="#fff" />
                     ) : (
                       <View style={localStyles.btnContentRow}>
-                        <Text style={localStyles.mainBtnText}>Confirm Transfer</Text>
+                        <Text style={localStyles.mainBtnText}>{isFromFundRequest ? "Confirm Request" : "Confirm Transfer"}</Text>
                         <Vector as="feather" name="chevron-right" size={22} color="#fff" />
                       </View>
                     )}
@@ -1050,7 +1066,7 @@ const MyWalletTransfer = () => {
             {tpinValues && (
               <View style={tpinModalStyles.summaryCard}>
                 <View style={tpinModalStyles.summaryRow}>
-                  <Text style={tpinModalStyles.summaryLabel}>Transfer To:</Text>
+                  <Text style={tpinModalStyles.summaryLabel}>{isFromFundRequest ? "Request From:" : "Transfer To:"}</Text>
                   <Text style={tpinModalStyles.summaryValue}>{tpinValues.ToRemitterID}</Text>
                 </View>
                 <View style={tpinModalStyles.summaryRow}>
@@ -1139,7 +1155,7 @@ const MyWalletTransfer = () => {
                 {verifyLoading ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={tpinModalStyles.modalConfirmButtonText}>Verify & Transfer</Text>
+                  <Text style={tpinModalStyles.modalConfirmButtonText}>{isFromFundRequest ? "Verify & Request" : "Verify & Transfer"}</Text>
                 )}
               </TouchableOpacity>
             </View>

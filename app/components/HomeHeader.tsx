@@ -228,7 +228,7 @@ const HomeHeader = ({ reward, currency, balance }: IProps) => {
         >
           <ActionOrb
             icon="plus"
-            label="Add Fund"
+            label="Fund Request"
             bgColor="#3B2F2F"
             iconColor="#FCF5F1"
             onPress={() => navigation.navigate('AddFund')}

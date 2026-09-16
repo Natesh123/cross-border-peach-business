@@ -7,665 +7,741 @@ import {
   StyleSheet,
   ActivityIndicator,
   TouchableOpacity,
-  Platform,
-  StatusBar,
-  Dimensions,
+  Modal,
+  TextInput,
+  Alert,
 } from "react-native";
 import { useRecoilValue } from "recoil";
 import { useIsFocused, useNavigation } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { LinearGradient } from "expo-linear-gradient";
-import Animated, { FadeInDown, FadeInUp, Layout, FadeInRight } from "react-native-reanimated";
-import CountryFlag from "react-native-country-flag";
+import { Ionicons } from "@expo/vector-icons";
 
 import { ProfileState } from "../../atoms";
-import { GetNotificationListInfo, UpdateNotification, GetTransactionDetails } from "app/http-services";
-import { FONTS, SIZES, SHADOWS } from "app/constants/Assets";
-import { RFValue } from "react-native-responsive-fontsize";
+import Container from "app/theme/Container";
+import { GetNotificationListInfo, UpdateNotification, VerifyTPIN, WalletTransfer, DenyWalletRequest } from "app/http-services";
+import { FONTS } from "app/constants/Assets";
 import Vector from "app/assets/vectors";
-
-const { width } = Dimensions.get("window");
+import ToastConfig from "app/components/ToastConfig";
+import moment from "moment";
 
 const Notification = () => {
   const currentToken = useRecoilValue(ProfileState);
+  const [currency, setCurrency] = useState("£");
+  const [reward, setReward] = useState("");
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>("");
+  const [modalVisible, setModalVisible] = useState(false);
+  const [selectedRequest, setSelectedRequest] = useState<any>(null);
+  
+  const [openVerifyTpin, setOpenVerifyTpin] = useState(false);
+  const [enteredPin, setEnteredPin] = useState("");
+  const [showEnteredPin, setShowEnteredPin] = useState(false);
+  const [verifyLoading, setVerifyLoading] = useState(false);
+  
+  const [showToast, setShowToast] = useState(false);
+  const [toastMsg, setToastMsg] = useState("");
+
   const isFocused = useIsFocused();
   const navigation = useNavigation();
 
   useEffect(() => {
+    const fetchNotifications = async () => {
+      try {
+        const response = await GetNotificationListInfo({});
+        const data = response?.data?.Notifications || [];
+
+        const notificationTypes: Record<number, string> = {
+          1: "Registration",
+          2: "Wallet Update",
+          4: "Transaction",
+        };
+
+        // 🔹 Load stored read statuses
+        const keys = await AsyncStorage.getAllKeys();
+        const storedValues = await AsyncStorage.multiGet(keys);
+        const localStatus: Record<string, any> = {};
+        storedValues.forEach(([key, value]) => {
+          if (key.startsWith("notification_") && value) {
+            localStatus[key] = JSON.parse(value);
+          }
+        });
+
+        const mappedNotifications = data.map((item: any) => {
+          const storageKey = `notification_${item.NotificationLogId}`;
+          const localItem = localStatus[storageKey];
+          
+          let type = notificationTypes[item.NotificationMasterId];
+          if (!type) {
+            if (item.NotificationMessage && item.NotificationMessage.toLowerCase().includes("request")) {
+              type = "Wallet Request";
+            } else {
+              type = "Other";
+            }
+          }
+
+          let normalizedStatus = "Pending";
+          if (item.Status === "Denied" || item.Type === "Wallet_Request_Denied" || (item.NotificationMessage && item.NotificationMessage.toLowerCase().includes("denied"))) {
+            normalizedStatus = "Denied";
+          } else if (item.Status === "Approved" || item.Type === "Wallet_Request_Approved" || (item.NotificationMessage && item.NotificationMessage.toLowerCase().includes("approved"))) {
+            normalizedStatus = "Approved";
+          }
+
+          let description = item.NotificationMessage;
+          if (type === "Wallet Request") {
+            if (normalizedStatus === "Approved" || normalizedStatus === "Denied") {
+              description = `Your wallet request of £${item.Amount} to ${item.RemitterId} has been ${normalizedStatus.toLowerCase()}.`;
+            } else if (item.FromRemitterEmail && item.Amount) {
+              description = `${item.FromRemitterEmail} has requested £${item.Amount} from you.`;
+            }
+          }
+
+          return {
+            id: item.NotificationLogId,
+            masterId: item.NotificationMasterId,
+            type: type,
+            description: description,
+            time: item.NotificationCreatedDate || "",
+            remitterId: item.FromRemitterId,
+            remitterEmail: item.FromRemitterEmail,
+            amount: item.Amount,
+            rawMessage: item.NotificationMessage,
+            status: normalizedStatus,
+            unread:
+              localItem?.unread !== undefined
+                ? localItem.unread
+                : item.NotificationIsread === "False",
+          };
+        });
+
+        // Sort notifications: latest first (descending order by date)
+        mappedNotifications.sort((a: any, b: any) => {
+          const formats = ["M/D/YYYY h:mm:ss A", "MM/DD/YYYY hh:mm:ss A", "YYYY-MM-DD HH:mm:ss", "YYYY-MM-DDTHH:mm:ss.SSSZ"];
+          let dateA = moment(a.time, formats, true).valueOf();
+          let dateB = moment(b.time, formats, true).valueOf();
+          
+          if (isNaN(dateA)) dateA = moment(a.time).valueOf();
+          if (isNaN(dateB)) dateB = moment(b.time).valueOf();
+
+          const valA = isNaN(dateA) ? 0 : dateA;
+          const valB = isNaN(dateB) ? 0 : dateB;
+
+          if (valA > valB) return -1;
+          if (valA < valB) return 1;
+          return 0;
+        });
+
+        setNotifications(mappedNotifications);
+      } catch (err) {
+        console.error("Error fetching notifications:", err);
+        setError("Failed to load notifications.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
     fetchNotifications();
   }, [isFocused]);
 
-  const fetchNotifications = async () => {
-    try {
-      setLoading(true);
-
-      const transPayload = {
-        fromDate: '',
-        numberTranList: '50',
-        toDate: '',
-        tranList: 'COUNT',
-        transId: '',
-        transactionType: 'MONEY_REMITTANCE',
-        walletMode: 'Sendmoney'
-      };
-
-      const [notifResponse, transResponse] = await Promise.all([
-        GetNotificationListInfo({}),
-        GetTransactionDetails(transPayload)
-      ]);
-
-      const data = notifResponse?.data?.Notifications || [];
-      const transData = transResponse?.data?.TransDetails || [];
-
-      const notificationTypes: Record<number, string> = {
-        1: "Registration",
-        2: "Wallet Update",
-        4: "Transaction",
-      };
-
-      const keys = await AsyncStorage.getAllKeys();
-      const storedValues = await AsyncStorage.multiGet(keys);
-      const localStatus: Record<string, any> = {};
-      storedValues.forEach(([key, value]) => {
-        if (key.startsWith("notification_") && value) {
-          localStatus[key] = JSON.parse(value);
-        }
-      });
-
-      let transIndex = 0;
-      const mappedNotifications = data.map((item: any) => {
-        const storageKey = `notification_${item.NotificationLogId}`;
-        const localItem = localStatus[storageKey];
-        
-        let transactionDetails = null;
-        if (item.NotificationMasterId === 4 && transIndex < transData.length) {
-          transactionDetails = transData[transIndex];
-          transIndex++;
-        }
-
-        return {
-          id: item.NotificationLogId,
-          masterId: item.NotificationMasterId,
-          type: notificationTypes[item.NotificationMasterId] || "Alert",
-          description: item.NotificationMessage,
-          time: item.NotificationCreatedDate || "",
-          unread:
-            localItem?.unread !== undefined
-              ? localItem.unread
-              : item.NotificationIsread === "False",
-          transactionDetails
-        };
-      });
-
-      setNotifications(mappedNotifications);
-    } catch (err) {
-      console.error("Error fetching notifications:", err);
-      setError("Failed to load notifications.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleNotificationPress = async (item: any) => {
-    if (!item.unread) return;
+    if (item.type === "Wallet Request") {
+      setSelectedRequest(item);
+      setModalVisible(true);
+    }
+    
     try {
+      // 1️⃣ Call UpdateNotification API
       await UpdateNotification({
         NotificationlogId: item.id,
         NotificationMasterId: item.masterId,
       });
 
+      // 2️⃣ Update local state
       setNotifications((prev) =>
         prev.map((n) =>
           n.id === item.id ? { ...n, unread: false } : n
         )
       );
 
+      // 3️⃣ Save in AsyncStorage
       await AsyncStorage.setItem(
         `notification_${item.id}`,
         JSON.stringify({ ...item, unread: false })
       );
     } catch (err) {
-      console.error("Failed to update notification status:", err);
+      console.error("Failed to update or refresh notifications:", err);
     }
   };
 
-  const getNotificationStyles = (type: string) => {
-    switch (type) {
-      case "Transaction":
-        return { icon: "repeat", color: "#FF8E72", as: "ionicons" };
-      case "Wallet Update":
-        return { icon: "account-balance-wallet", color: "#FBBF24", as: "materialicons" };
-      case "Registration":
-        return { icon: "person-add", color: "#10B981", as: "materialicons" };
-      default:
-        return { icon: "notifications", color: "#FF8E72", as: "ionicons" };
+  const handleApprovePress = () => {
+    setModalVisible(false);
+    setOpenVerifyTpin(true);
+  };
+
+  const handleDenyPress = async () => {
+    if (!selectedRequest) return;
+    setModalVisible(false);
+    try {
+      const reqBody = {
+        WalletRequestId: selectedRequest.id,
+        NotificationLogId: selectedRequest.id,
+        ToRemitterID: selectedRequest.remitterId,
+      };
+      
+      const res = await DenyWalletRequest(reqBody);
+      const statusCode = res?.data?.StatusCode;
+      
+      if (statusCode === "ER0000" || statusCode === "0") {
+        setToastMsg(res?.data?.StatusMsg || "Request denied successfully");
+        setShowToast(true);
+
+        try {
+          await UpdateNotification({
+            NotificationlogId: selectedRequest.id,
+            NotificationMasterId: selectedRequest.masterId,
+            Status: "Denied"
+          });
+        } catch (err) {
+          console.error("Failed to update notification after deny:", err);
+        }
+
+        setTimeout(() => {
+          navigation.navigate("HomeDrawer" as never);
+        }, 1500);
+      } else {
+        setToastMsg(res?.data?.StatusMsg || "Failed to deny request");
+        setShowToast(true);
+      }
+    } catch (error) {
+      console.error("Deny wallet request failed", error);
+      setToastMsg("Something went wrong. Please try again later.");
+      setShowToast(true);
     }
   };
 
-  const renderItem = (item: any, index: number) => {
-    const { icon, color, as } = getNotificationStyles(item.type);
-    const dateParts = item.time.split(" ");
-    const dateStr = dateParts[0];
-    const timeStr = dateParts.slice(1).join(" ");
-    
-    // Using require inside the component block similar to TransactionItem
-    const getCountryISO2 = require("country-iso-3-to-2");
+  const handleVerifyTpinSubmit = async () => {
+    setVerifyLoading(true);
+    try {
+      const verifyRes = await VerifyTPIN({ TPIN: enteredPin });
+      if (verifyRes?.data?.StatusCode === "ER0000" || verifyRes?.data?.StatusCode === "0") {
+        const reqBody = {
+          ToRemitterID: selectedRequest.remitterId,
+          Amount: selectedRequest.amount,
+          RemitterEmail: selectedRequest.remitterEmail,
+          TPIN: enteredPin,
+          WalletRequestId: selectedRequest.id
+        };
 
-    if (item.type === "Transaction" && item.transactionDetails) {
-      const trans = item.transactionDetails;
-      const senderIso = getCountryISO2(trans.SourceCountry) || "GB";
-      const receiverIso = getCountryISO2(trans.DestinationCountry) || "";
-      const isSuccess = trans.TranStatus === "Success";
-      const statusColor = isSuccess ? "#10B981" : trans.TranStatus === "Processing" ? "#F59E0B" : "#EF4444";
-      const statusLabel = isSuccess ? "SUCCESS" : trans.TranStatus === "Processing" ? "PENDING" : "FAILED";
+        const res = await WalletTransfer(reqBody);
+        
+        const statusCode = res?.data?.StatusCode;
+        if (statusCode === "ER0000" || statusCode === "0" || statusCode === "ER0073") {
+           setToastMsg(res?.data?.StatusMsg || "Money sent successfully");
+           setShowToast(true);
+           
+           try {
+             await UpdateNotification({
+               NotificationlogId: selectedRequest.id,
+               NotificationMasterId: selectedRequest.masterId,
+               Status: "Approved"
+             });
+           } catch (err) {
+             console.error("Failed to update notification after transfer:", err);
+           }
 
-      const senderName = `${trans.SenderFirstName || ''} ${trans.SenderLastName || ''}`.trim() || "Sender";
-      const receiverName = `${trans.ReceiverFirstName || ''} ${trans.ReceiverLastName || ''}`.trim() || trans.TransactionPurpose || "Receiver";
-
-      return (
-        <Animated.View
-          key={item.id}
-          entering={FadeInRight.delay(index * 50).duration(400)}
-          layout={Layout.springify()}
-          style={styles.cardRow}
-        >
-          <TouchableOpacity
-            onPress={() => handleNotificationPress(item)}
-            activeOpacity={0.9}
-            style={[styles.receiptCard, item.unread ? styles.receiptCardUnread : null]}
-          >
-            {/* Status Header */}
-            <View style={[styles.statusHeader, { backgroundColor: `${statusColor}10` }]}>
-              <Vector as="ionicons" name={isSuccess ? "checkmark-circle" : "time"} size={14} color={statusColor} />
-              <Text style={[styles.statusHeaderText, { color: statusColor }]}>{statusLabel}</Text>
-            </View>
-
-            {/* Sender & Receiver Info */}
-            <View style={styles.participantRow}>
-              <View style={styles.participant}>
-                <Text style={styles.participantLabel}>Sender: </Text>
-                <Text style={styles.participantName}>{senderName}</Text>
-                <Text style={styles.countryCode}> ({trans.SourceCountry || "GBR"})</Text>
-                {senderIso ? <CountryFlag isoCode={senderIso} size={14} style={styles.flagStyle} /> : null}
-              </View>
-
-              <Vector as="feather" name="arrow-right" size={16} color="#10B981" />
-
-              <View style={styles.participant}>
-                <Text style={styles.participantLabel}>Receiver: </Text>
-                <Text style={styles.participantName}>{receiverName}</Text>
-                <Text style={styles.countryCode}> ({trans.DestinationCountry || "IND"})</Text>
-                {receiverIso ? <CountryFlag isoCode={receiverIso} size={14} style={styles.flagStyle} /> : null}
-              </View>
-            </View>
-
-            {/* Amount & Mode */}
-            <View style={styles.detailsBox}>
-              <View style={styles.detailItem}>
-                <Text style={styles.detailLabel}>Amount Sent:</Text>
-                <Text style={styles.detailValue}>{trans.Currency || "£"}{trans.Amount}</Text>
-              </View>
-              <View style={styles.detailItemEnd}>
-                <Text style={styles.detailLabel}>Receiving Mode:</Text>
-                <Text style={styles.detailValueMode}>{trans.TransactionMode || "DEBIT"}</Text>
-              </View>
-            </View>
-
-            {/* Dashed Separator */}
-            <View style={styles.dashedContainer}>
-              <View style={styles.dashedLine} />
-            </View>
-
-            {/* Footer */}
-            <View style={styles.receiptFooter}>
-              <View style={styles.footerLeft}>
-                <Vector as="feather" name="send" size={12} color="#64748B" style={{ marginRight: 6 }} />
-                <Text style={styles.footerModeText}>
-                  {(trans.TransactionMode || "MOBILE WALLET").toUpperCase()}
-                </Text>
-              </View>
-
-              <View style={styles.footerCenter}>
-                <Text style={styles.footerDate}>{dateStr} • {timeStr}</Text>
-              </View>
-
-              <View style={styles.footerRight}>
-                <Text style={styles.transIdText}>{trans.TransactionID || trans.TransID || "N/A"}</Text>
-              </View>
-            </View>
-            
-            {item.unread && (
-               <View style={styles.unreadDot} />
-            )}
-          </TouchableOpacity>
-        </Animated.View>
-      );
+           setOpenVerifyTpin(false);
+           setEnteredPin("");
+           setShowEnteredPin(false);
+           setModalVisible(false);
+           setTimeout(() => {
+             navigation.navigate("HomeDrawer" as never);
+           }, 1500);
+        } else {
+           setToastMsg(res?.data?.StatusMsg || "Failed to transfer money");
+           setShowToast(true);
+        }
+      } else {
+         setToastMsg(verifyRes?.data?.StatusMessage || "Invalid TPIN");
+         setShowToast(true);
+      }
+    } catch (error) {
+       console.error("TPIN Verify / Transfer failed", error);
+       setToastMsg("Something went wrong. Please try again later.");
+       setShowToast(true);
+    } finally {
+      setVerifyLoading(false);
     }
-
-    // Generic Fallback UI for non-transactions
-    return (
-      <Animated.View
-          key={item.id}
-          entering={FadeInRight.delay(index * 50).duration(400)}
-          layout={Layout.springify()}
-          style={styles.cardRow}
-        >
-        <TouchableOpacity
-            onPress={() => handleNotificationPress(item)}
-            activeOpacity={0.9}
-            style={[styles.genericCard, item.unread ? styles.receiptCardUnread : null]}
-          >
-            <View style={styles.genericHeader}>
-               <View style={[styles.genericIconBox, { backgroundColor: `${color}1A` }]}>
-                  <Vector as={as as any} name={icon} size={16} color={color} />
-               </View>
-               <Text style={styles.genericTitle}>{item.type}</Text>
-               {item.unread && <View style={styles.unreadDotGeneric} />}
-            </View>
-            
-            <Text style={styles.genericDesc}>{item.description}</Text>
-            
-            <View style={styles.genericFooter}>
-               <Text style={styles.footerDate}>{dateStr} • {timeStr}</Text>
-            </View>
-        </TouchableOpacity>
-      </Animated.View>
-    );
   };
-
-  const unreadItems = notifications.filter((n) => n.unread);
-  const readItems = notifications.filter((n) => !n.unread);
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+    <SafeAreaView style={styles.container}>
+      <View style={styles.headerContainer}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backButton}
+        >
+          <Ionicons name="arrow-back" size={24} color="#fff" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Notifications</Text>
+      </View>
 
-      {/* Elite Peach/Brown Header */}
-      <LinearGradient
-        colors={['#2C1810', '#3B2F2F']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.headerWrapper}
-      >
-        <SafeAreaView style={styles.safeHeader}>
-          <View style={styles.headerContent}>
-            <TouchableOpacity
-              onPress={() => navigation.goBack()}
-              style={styles.backCircle}
-              activeOpacity={0.7}
-            >
-              <Vector as="ionicons" name="chevron-back" size={24} color="#FCF5F1" />
-            </TouchableOpacity>
-            <View style={styles.titleBox}>
-              <Text style={styles.headerTitle}>Notifications</Text>
-              <Text style={styles.headerSub}>Activity & Updates</Text>
-            </View>
-          </View>
-        </SafeAreaView>
-      </LinearGradient>
-
-      <View style={styles.body}>
-        {loading ? (
-          <View style={styles.loader}>
-            <ActivityIndicator size="large" color="#FF8E72" />
-            <Text style={styles.loaderTxt}>Loading your updates...</Text>
-          </View>
+      <View style={styles.contentBackground}>
+        <Container>
+          {loading ? (
+          <ActivityIndicator
+            size="large"
+            color="#0000ff"
+            style={{ marginTop: 20 }}
+          />
         ) : error ? (
-          <View style={styles.loader}>
-            <Vector as="ionicons" name="alert-circle" size={50} color="#EF4444" />
-            <Text style={styles.errorTxt}>{error}</Text>
-          </View>
-        ) : notifications.length === 0 ? (
-          <View style={styles.empty}>
-            <Vector as="materialcommunityicons" name="bell-off-outline" size={80} color="#E2E8F0" />
-            <Text style={styles.emptyTxt}>No recent notifications</Text>
-          </View>
+          <Text style={styles.errorText}>{error}</Text>
         ) : (
           <ScrollView
+            contentContainerStyle={{ paddingBottom: 40 }}
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.scrollContent}
           >
-            {unreadItems.length > 0 && (
-              <View style={styles.section}>
-                <View style={styles.sectionHeader}>
-                  <Vector as="feather" name="activity" size={16} color="#FF8E72" style={{ marginRight: 8 }} />
-                  <Text style={styles.sectionLabel}>NEW ACTIVITY</Text>
-                </View>
-                <View style={styles.listContainer}>
-                  {unreadItems.map((item, idx) => renderItem(item, idx))}
-                </View>
-              </View>
-            )}
-
-            {readItems.length > 0 && (
-              <View style={[styles.section, { marginTop: unreadItems.length > 0 ? 30 : 0 }]}>
-                <View style={styles.sectionHeader}>
-                  <Vector as="feather" name="clock" size={16} color="#94A3B8" style={{ marginRight: 8 }} />
-                  <Text style={[styles.sectionLabel, { color: '#94A3B8' }]}>PAST ACTIVITY</Text>
-                </View>
-                <View style={styles.listContainer}>
-                  {readItems.map((item, idx) => renderItem(item, idx + unreadItems.length))}
-                </View>
-              </View>
+            {notifications.length === 0 ? (
+              <Text style={styles.noNotifications}>
+                No notifications available
+              </Text>
+            ) : (
+              notifications.map((item) => (
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  key={item.id}
+                  onPress={() => handleNotificationPress(item)}
+                >
+                  <View style={[styles.card, item.unread && styles.unreadCard]}>
+                    <View style={styles.cardContent}>
+                      <View style={styles.row}>
+                        <Text style={styles.title} numberOfLines={1}>{item.type}</Text>
+                        <View style={styles.rightRow}>
+                          <Text style={styles.time}>{item.time}</Text>
+                          {item.unread && <View style={styles.dot} />}
+                        </View>
+                      </View>
+                      <Text style={styles.description} numberOfLines={2}>{item.description}</Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              ))
             )}
           </ScrollView>
         )}
+        </Container>
       </View>
-    </View>
+
+      {/* WALLET REQUEST DETAILS MODAL */}
+      <Modal
+        visible={modalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            {/* Header */}
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Wallet Request Details</Text>
+              <TouchableOpacity onPress={() => setModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Details Box */}
+            <View style={styles.detailsBox}>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Requested Remitter ID:</Text>
+                <Text style={styles.detailValueBold}>{selectedRequest?.remitterId || "-"}</Text>
+              </View>
+              <View style={styles.divider} />
+              
+              {selectedRequest?.status === "Pending" && (
+                <>
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Requested Email ID:</Text>
+                    <Text style={styles.detailValueBold}>{selectedRequest?.remitterEmail || "-"}</Text>
+                  </View>
+                  <View style={styles.divider} />
+                </>
+              )}
+
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Requested Amount:</Text>
+                <Text style={styles.detailValueGreen}>£{selectedRequest?.amount || "0.00"}</Text>
+              </View>
+              <View style={styles.divider} />
+
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Requested Date:</Text>
+                <Text style={styles.detailValue}>{selectedRequest?.time}</Text>
+              </View>
+              <View style={styles.divider} />
+
+              <View style={styles.messageBox}>
+                <Text style={styles.detailLabel}>Message:</Text>
+                <Text style={styles.detailMessageText}>{selectedRequest?.description}</Text>
+              </View>
+            </View>
+
+            {/* Actions */}
+            <View style={styles.modalActions}>
+              {selectedRequest?.status === "Denied" || selectedRequest?.status === "Approved" ? (
+                <Text style={[styles.statusText, { color: selectedRequest?.status === "Denied" ? "#EF4444" : "#10B981" }]}>
+                  Request {selectedRequest.status}
+                </Text>
+              ) : (
+                <>
+                  <TouchableOpacity style={styles.denyButton} onPress={handleDenyPress}>
+                    <Text style={styles.denyButtonText}>Deny</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.approveButton} onPress={handleApprovePress}>
+                    <Text style={styles.approveButtonText}>Approve</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Verify TPIN Modal */}
+      <Modal
+        visible={openVerifyTpin}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => {
+          setOpenVerifyTpin(false);
+          setEnteredPin("");
+          setShowEnteredPin(false);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <TouchableOpacity
+              style={{ position: "absolute", top: 16, right: 16, zIndex: 10 }}
+              onPress={() => {
+                setOpenVerifyTpin(false);
+                setEnteredPin("");
+                setShowEnteredPin(false);
+              }}
+            >
+              <Vector as="ionicons" name="close" size={24} color="#94a3b8" />
+            </TouchableOpacity>
+
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", marginBottom: 20, marginTop: 10 }}>
+              <Vector
+                as="ionicons"
+                name="lock-closed"
+                size={22}
+                color="#FF8E72"
+                style={{ marginRight: 8 }}
+              />
+              <Text style={{ fontSize: 18, fontFamily: FONTS.bold, color: "#FF8E72" }}>
+                Enter Transaction PIN
+              </Text>
+            </View>
+
+            {selectedRequest && (
+              <View style={{ backgroundColor: "#F9FAFB", borderRadius: 12, padding: 16, marginBottom: 24, borderWidth: 1, borderColor: "#E5E7EB" }}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 8 }}>
+                  <Text style={{ fontSize: 13, color: "#6B7280", fontFamily: FONTS.medium }}>Transfer To</Text>
+                  <Text style={{ fontSize: 13, color: "#111827", fontFamily: FONTS.bold }}>{selectedRequest.remitterId}</Text>
+                </View>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 12 }}>
+                  <Text style={{ fontSize: 13, color: "#6B7280", fontFamily: FONTS.medium }}>Beneficiary Email</Text>
+                  <Text style={{ fontSize: 13, color: "#111827", fontFamily: FONTS.bold }}>{selectedRequest.remitterEmail}</Text>
+                </View>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", paddingTop: 12, borderTopWidth: 1, borderTopColor: "#E5E7EB", alignItems: "center" }}>
+                  <Text style={{ fontSize: 14, color: "#374151", fontFamily: FONTS.bold }}>Amount</Text>
+                  <Text style={{ fontSize: 16, color: "#FF8E72", fontFamily: FONTS.bold }}>£{selectedRequest.amount}</Text>
+                </View>
+              </View>
+            )}
+
+            <Text style={{ fontSize: 14, color: "#4B5563", textAlign: "center", marginBottom: 20, fontFamily: FONTS.medium }}>
+              Enter your secure 4-digit TPIN to complete this transfer.
+            </Text>
+
+            <View style={{ alignSelf: "center", position: "relative", marginBottom: 24, width: "70%" }}>
+              <TextInput
+                placeholder="••••"
+                keyboardType="numeric"
+                maxLength={4}
+                secureTextEntry={!showEnteredPin}
+                value={enteredPin}
+                onChangeText={(val) => setEnteredPin(val.replace(/[^0-9]/g, ''))}
+                style={{
+                  backgroundColor: "#F3F4F6",
+                  borderRadius: 12,
+                  fontSize: 24,
+                  letterSpacing: 8,
+                  textAlign: "center",
+                  paddingVertical: 14,
+                  color: "#111827",
+                  fontFamily: FONTS.bold,
+                  borderWidth: 1,
+                  borderColor: "#E5E7EB"
+                }}
+              />
+              <TouchableOpacity
+                onPress={() => setShowEnteredPin(!showEnteredPin)}
+                style={{
+                  position: "absolute",
+                  right: 16,
+                  top: 0,
+                  bottom: 0,
+                  justifyContent: "center",
+                  alignItems: "center",
+                  zIndex: 2,
+                }}
+              >
+                <Vector
+                  as="materialcommunityicons"
+                  name={showEnteredPin ? "eye" : "eye-off"}
+                  size={22}
+                  color="#9CA3AF"
+                />
+              </TouchableOpacity>
+            </View>
+
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <TouchableOpacity
+                onPress={() => {
+                  setOpenVerifyTpin(false);
+                  setEnteredPin("");
+                  setShowEnteredPin(false);
+                }}
+                disabled={verifyLoading}
+                style={{ flex: 1, backgroundColor: "#F3F4F6", paddingVertical: 14, borderRadius: 12, alignItems: "center" }}
+              >
+                <Text style={{ color: "#374151", fontFamily: FONTS.bold, fontSize: 15 }}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleVerifyTpinSubmit}
+                disabled={enteredPin.length !== 4 || verifyLoading}
+                style={[
+                  { flex: 1, backgroundColor: "#FF8E72", paddingVertical: 14, borderRadius: 12, alignItems: "center", flexDirection: "row", justifyContent: "center" },
+                  (enteredPin.length !== 4 || verifyLoading) && { opacity: 0.5 }
+                ]}
+              >
+                {verifyLoading && <ActivityIndicator color="#fff" size="small" style={{ marginRight: 8 }} />}
+                <Text style={{ color: "#fff", fontFamily: FONTS.bold, fontSize: 15 }}>Transfer</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      <ToastConfig visible={showToast} message={toastMsg} onClose={() => setShowToast(false)} />
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F8FAFC", // Light background for contrast
+    backgroundColor: "#FF8E72", // matches header so the iOS notch is blue
   },
-  headerWrapper: {
-    paddingBottom: 25,
-    borderBottomLeftRadius: 36,
-    borderBottomRightRadius: 36,
-    ...Platform.select({
-      ios: { shadowColor: '#3B2F2F', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.15, shadowRadius: 15 },
-      android: { elevation: 10 },
-    }),
+  contentBackground: {
+    flex: 1,
+    backgroundColor: "#fff",
   },
-  safeHeader: {
-    marginTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
+  headerContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 15,
+    backgroundColor: "#FF8E72",
   },
-  headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 10,
-  },
-  backCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  titleBox: {
-    marginLeft: 18,
+  backButton: {
+    padding: 4,
+    marginRight: 12,
   },
   headerTitle: {
-    fontSize: RFValue(18),
-    fontFamily: FONTS.bold,
-    color: '#FCF5F1',
-    letterSpacing: 0.5,
+    fontSize: 18,
+    fontWeight: "600",
+    fontFamily: FONTS.semiBold,
+    color: "#fff",
   },
-  headerSub: {
-    fontSize: RFValue(10),
-    color: 'rgba(252, 245, 241, 0.7)',
-    fontFamily: FONTS.medium,
-    marginTop: 2,
+  errorText: {
+    color: "red",
+    marginTop: 20,
+    textAlign: "center",
   },
-  body: {
+  noNotifications: {
+    textAlign: "center",
+    marginTop: 20,
+    color: "#666",
+  },
+  card: {
+    backgroundColor: "#fff",
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
+  },
+  unreadCard: {
+    backgroundColor: "#F9FAFB",
+  },
+  cardContent: {
     flex: 1,
+    justifyContent: "center",
   },
-  scrollContent: {
-    paddingTop: 25,
-    paddingHorizontal: 15,
-    paddingBottom: 50,
+  row: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 6,
   },
-  section: {
-    marginBottom: 10,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 15,
-    paddingLeft: 5,
-  },
-  sectionLabel: {
-    fontSize: RFValue(9),
+  title: {
+    fontSize: 15,
+    fontWeight: "700",
     fontFamily: FONTS.bold,
-    color: "#3B2F2F",
-    letterSpacing: 1.5,
+    color: "#1C1C1E",
+    flex: 1,
+    paddingRight: 10,
   },
-  listContainer: {
-    gap: 15, // Space between cards
+  rightRow: {
+    flexDirection: "row",
+    alignItems: "center",
   },
-  cardRow: {
-    width: '100%',
+  time: {
+    fontSize: 12,
+    fontFamily: FONTS.regular,
+    color: "#6B7280",
   },
-  receiptCard: {
-    backgroundColor: '#FFF',
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#DC2626",
+    marginLeft: 6,
+  },
+  description: {
+    fontSize: 14,
+    fontFamily: FONTS.regular,
+    color: "#6B7280",
+    lineHeight: 20,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: "#fff",
+    width: "100%",
     borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(59, 47, 47, 0.05)',
-    padding: 16,
-    paddingBottom: 12,
-    position: 'relative',
-    ...Platform.select({
-      ios: { shadowColor: '#3B2F2F', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 8 },
-      android: { elevation: 2 },
-    }),
+    padding: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 8,
   },
-  receiptCardUnread: {
-    borderWidth: 1.5,
-    borderColor: '#FF8E72',
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 20,
   },
-  statusHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 6,
-    borderRadius: 8,
-    marginBottom: 16,
-    gap: 6,
-  },
-  statusHeaderText: {
-    fontSize: RFValue(10),
+  modalTitle: {
+    fontSize: 18,
     fontFamily: FONTS.bold,
-    letterSpacing: 0.5,
-  },
-  participantRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  participant: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    flex: 1,
-    justifyContent: 'center',
-  },
-  participantLabel: {
-    fontSize: RFValue(10),
-    fontFamily: FONTS.medium,
-    color: '#94A3B8',
-  },
-  participantName: {
-    fontSize: RFValue(10),
-    fontFamily: FONTS.bold,
-    color: '#3B2F2F',
-  },
-  countryCode: {
-    fontSize: RFValue(10),
-    fontFamily: FONTS.bold,
-    color: '#64748B',
-    marginRight: 4,
-  },
-  flagStyle: {
-    width: 14,
-    height: 10,
-    borderRadius: 2,
+    color: "#1C1C1E",
   },
   detailsBox: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
+    backgroundColor: "#F9FAFB",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    padding: 16,
+    marginBottom: 24,
   },
-  detailItem: {
-    flex: 1,
+  detailRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 12,
   },
-  detailItemEnd: {
-    flex: 1,
-    alignItems: 'flex-end',
+  divider: {
+    height: 1,
+    backgroundColor: "#E5E7EB",
   },
   detailLabel: {
-    fontSize: RFValue(9),
+    fontSize: 13,
     fontFamily: FONTS.medium,
-    color: '#94A3B8',
-    marginBottom: 4,
+    color: "#6B7280",
+    flex: 1,
   },
   detailValue: {
-    fontSize: RFValue(12),
-    fontFamily: FONTS.bold,
-    color: '#3B2F2F',
-  },
-  detailValueMode: {
-    fontSize: RFValue(11),
-    fontFamily: FONTS.bold,
-    color: '#3B2F2F',
-  },
-  dashedContainer: {
-    overflow: 'hidden',
-    height: 2,
-    marginBottom: 16,
-  },
-  dashedLine: {
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-    borderStyle: 'dashed',
-    width: '100%',
-  },
-  receiptFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  footerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    fontSize: 13,
+    fontFamily: FONTS.regular,
+    color: "#1C1C1E",
+    textAlign: "right",
     flex: 1,
   },
-  footerModeText: {
-    fontSize: RFValue(8),
+  detailValueBold: {
+    fontSize: 13,
     fontFamily: FONTS.bold,
-    color: '#64748B',
-    letterSpacing: 0.5,
-  },
-  footerCenter: {
+    color: "#1C1C1E",
+    textAlign: "right",
     flex: 1,
-    alignItems: 'center',
   },
-  footerDate: {
-    fontSize: RFValue(8.5),
-    fontFamily: FONTS.medium,
-    color: '#94A3B8',
-  },
-  footerRight: {
-    flex: 1,
-    alignItems: 'flex-end',
-  },
-  transIdText: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-    fontSize: RFValue(8.5),
+  detailValueGreen: {
+    fontSize: 14,
     fontFamily: FONTS.bold,
-    color: '#64748B',
+    color: "#059669",
+    textAlign: "right",
+    flex: 1,
   },
-  unreadDot: {
-    position: 'absolute',
-    top: -4,
-    right: -4,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#FF8E72',
-    borderWidth: 2,
-    borderColor: '#FFF',
+  messageBox: {
+    paddingTop: 12,
   },
-  
-  // Generic Card Styles
-  genericCard: {
-    backgroundColor: '#FFF',
-    borderRadius: 16,
-    padding: 16,
+  detailMessageText: {
+    fontSize: 13,
+    fontFamily: FONTS.regular,
+    color: "#1C1C1E",
+    marginTop: 6,
+    lineHeight: 18,
+  },
+  modalActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 12,
+  },
+  denyButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(59, 47, 47, 0.05)',
-    position: 'relative',
-    ...Platform.select({
-      ios: { shadowColor: '#3B2F2F', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 8 },
-      android: { elevation: 2 },
-    }),
+    borderColor: "#EF4444",
   },
-  genericHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  genericIconBox: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
-  },
-  genericTitle: {
-    fontSize: RFValue(12),
-    fontFamily: FONTS.bold,
-    color: '#3B2F2F',
-  },
-  genericDesc: {
-    fontSize: RFValue(11),
-    fontFamily: FONTS.medium,
-    color: '#64748B',
-    lineHeight: RFValue(16),
-    marginBottom: 12,
-  },
-  genericFooter: {
-    alignItems: 'flex-end',
-  },
-  unreadDotGeneric: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#FF8E72',
-    marginLeft: 8,
-  },
-  
-  loader: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  loaderTxt: {
-    marginTop: 15,
-    fontFamily: FONTS.medium,
-    color: "#8E7F77",
-  },
-  errorTxt: {
-    marginTop: 10,
-    fontFamily: FONTS.bold,
+  denyButtonText: {
     color: "#EF4444",
-  },
-  empty: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  emptyTxt: {
-    marginTop: 15,
-    fontSize: RFValue(14),
     fontFamily: FONTS.bold,
-    color: "#CBD5E1",
+    fontSize: 14,
+  },
+  approveButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    backgroundColor: "#10B981",
+  },
+  approveButtonText: {
+    color: "#fff",
+    fontFamily: FONTS.bold,
+    fontSize: 14,
+  },
+  statusText: {
+    fontFamily: FONTS.bold,
+    fontSize: 16,
+    textAlign: "center",
+    flex: 1,
+    paddingVertical: 10,
   },
 });
 
