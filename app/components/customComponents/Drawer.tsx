@@ -19,12 +19,16 @@ import { ProfileState } from "app/atoms";
 import { useNavigation } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons, MaterialCommunityIcons, Feather } from "@expo/vector-icons";
+import DeactivateAccountModal from "./DeactivateAccountModal";
+import { CreateDeactivationRequest } from "app/http-services";
+import Toast from 'react-native-toast-message';
 
 const CustomDrawer = (props: any) => {
   const navigation = useNavigation();
   const currentToken = useRecoilValue(ProfileState);
   const [ProfileItems, setProfileItems] = useRecoilState(ProfileState);
   const [loading, setLoading] = useState(false);
+  const [isDeactivateModalVisible, setIsDeactivateModalVisible] = useState(false);
 
   const _onSignOutPressed = async () => {
     setLoading(true);
@@ -100,6 +104,19 @@ const CustomDrawer = (props: any) => {
 
       {/* ── FOOTER ── */}
       <View style={s.footer}>
+        {/* Deactivate Account */}
+        <TouchableOpacity
+          onPress={() => {
+            setIsDeactivateModalVisible(true);
+            props.navigation.closeDrawer();
+          }}
+          activeOpacity={0.85}
+          style={[s.logoutBtn, { backgroundColor: '#EF4444', marginBottom: 10 }]}
+        >
+          <MaterialCommunityIcons name="account-remove" size={18} color="#FFFFFF" />
+          <Text style={[s.logoutTxt, { color: '#FFFFFF' }]}>DEACTIVATE ACCOUNT</Text>
+        </TouchableOpacity>
+
         {/* Logout */}
         <TouchableOpacity
           onPress={_onSignOutPressed}
@@ -116,6 +133,36 @@ const CustomDrawer = (props: any) => {
           <Text style={s.brandFooterTxt}>CROSS BORDER • V1.2.0</Text>
         </View>
       </View>
+
+      <DeactivateAccountModal 
+        isVisible={isDeactivateModalVisible} 
+        onClose={() => setIsDeactivateModalVisible(false)} 
+        onSubmit={async (reason) => {
+          setIsDeactivateModalVisible(false);
+          try {
+            const response = await CreateDeactivationRequest({ Reason: reason });
+            if (response?.data?.StatusCode === "SUCCESS" || response?.data?.StatusCode === "ER0000" || response?.data?.StatusCode === "000000") {
+              Toast.show({
+                type: 'success',
+                text1: 'Success',
+                text2: response?.data?.StatusMsg || 'Deactivation request submitted successfully.'
+              });
+            } else {
+              Toast.show({
+                type: 'error',
+                text1: 'Error',
+                text2: response?.data?.StatusMsg || 'Failed to submit request.'
+              });
+            }
+          } catch (error) {
+            Toast.show({
+              type: 'error',
+              text1: 'Error',
+              text2: 'An unexpected error occurred. Please try again.'
+            });
+          }
+        }} 
+      />
     </View>
   );
 };
